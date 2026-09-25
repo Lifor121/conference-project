@@ -1,0 +1,13 @@
+{
+  "name": "vc-media-server",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "start": "node src/index.js"
+  },
+  "dependencies": {
+    "express": "^4.21.0",
+    "mediasoup": "^3.19.0",
+    "ws": "^8.18.0"
+  }
+}
