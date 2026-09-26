@@ -88,6 +88,16 @@ const expectFail = async (label, promise) => {
   const recv = await client.request('createWebRtcTransport', { direction: 'recv' });
   ok('recv transport');
 
+  console.log('5. produce с битыми rtpParameters');
+  await expectFail('produce', client.request('produce', { transportId: send.id, kind: 'audio', rtpParameters: {} }));
+
+  console.log('6. consume несуществующего producer');
+  await expectFail('consume', client.request('consume', {
+    transportId: recv.id,
+    producerId: 'no-such-producer',
+    rtpCapabilities: { codecs: [], headerExtensions: [] },
+  }));
+
   client.ws.close();
 
   setTimeout(() => process.exit(0), 500);
