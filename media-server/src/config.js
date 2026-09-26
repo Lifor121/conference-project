@@ -3,6 +3,12 @@ module.exports = {
   listenIp: process.env.LISTEN_IP || '0.0.0.0',
   backendUrl: process.env.BACKEND_URL || 'http://backend:8000',
 
+  app: {
+    maxPeersPerRoom: parseInt(process.env.MAX_PEERS_PER_ROOM || '50', 10),
+    // пустая комната живёт ещё 15с
+    roomCloseDelayMs: parseInt(process.env.ROOM_CLOSE_DELAY_MS || '15000', 10),
+  },
+
   mediasoup: {
     worker: {
       rtcMinPort: parseInt(process.env.MEDIASOUP_RTC_MIN_PORT || '40000', 10),

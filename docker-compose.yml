@@ -35,6 +35,8 @@ services:
 
   media:
     build: ./media-server
+    command: npm run dev                      # ← вместо CMD из Dockerfile
+    restart: unless-stopped                   # ← воркер умер → exit → docker поднимет
     environment:
       HTTP_PORT: 4443
       LISTEN_IP: 0.0.0.0
@@ -43,6 +45,8 @@ services:
       MEDIASOUP_ANNOUNCED_IP: ${MEDIASOUP_ANNOUNCED_IP:-127.0.0.1}
       MEDIASOUP_RTC_MIN_PORT: 40000
       MEDIASOUP_RTC_MAX_PORT: 40100
+      MAX_PEERS_PER_ROOM: ${MAX_PEERS_PER_ROOM:-50}
+      ROOM_CLOSE_DELAY_MS: ${ROOM_CLOSE_DELAY_MS:-15000}
     ports:
       - "4443:4443"
       - "40000-40100:40000-40100/udp"
