@@ -22,4 +22,7 @@ migration:
 psql:
 	docker compose exec db sh -c 'psql -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"'
 
-.PHONY: up down logs migrate migration psql
+rebuild:
+	docker compose up -d --build --renew-anon-volumes
+
+.PHONY: up down logs migrate migration psql rebuild
