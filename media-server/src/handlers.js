@@ -7,7 +7,15 @@ const { workerPool } = require('./workers');
 // ошибка = throw Error, уйдёт клиенту как {ok: false, error}
 
 function peerInfo(peer) {
-  return { id: peer.id, displayName: peer.displayName };
+  return {
+    id: peer.id,
+    displayName: peer.displayName,
+    producers: [...peer.producers.values()].map((p) => ({
+      producerId: p.id,
+      kind: p.kind,
+      source: p.appData.source,
+    })),
+  }
 }
 
 function assertJoined(peer) {
@@ -180,6 +188,8 @@ async function consume(peer, _roomId, data) {
     peer.consumers.delete(consumer.id);
     peer.send('consumerClosed', { consumerId: consumer.id });
   });
+
+  console.log(`[consumer] ${owner.displayName} → ${peer.displayName}: ${source}/${consumer.kind}`)
 
   return {
     id: consumer.id,

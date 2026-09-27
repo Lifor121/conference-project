@@ -7,7 +7,10 @@
 ## Формат сообщений
 
 ```
-Запрос C→S:   { "id": 1, "method": "join", "data": { ... } }Ответ S→C:    { "id": 1, "ok": true, "data": { ... } }              { "id": 1, "ok": false, "error": "...", "code": "..." }Уведомление:  { "notification": "newPeer", "data": { ... } }   — в обе стороны, без ответа
+Запрос C→S:   { "id": 1, "method": "join", "data": { ... } }
+Ответ S→C:    { "id": 1, "ok": true, "data": { ... } }              
+              { "id": 1, "ok": false, "error": "...", "code": "..." }
+Уведомление:  { "notification": "newPeer", "data": { ... } }   — в обе стороны, без ответа
 ```
 
 id генерирует клиентом (инкремент), сервер копирует его в ответ.Запросы можно слать параллельно, не дожидаясь ответов.
@@ -16,7 +19,7 @@ id генерирует клиентом (инкремент), сервер ко
 
 | Метод                    | Запрос                                          | Ответ                                                             |
 | ------------------------ | ----------------------------------------------- | ----------------------------------------------------------------- |
-| join                   | { displayName }                               | { rtpCapabilities, peers: [{id, displayName}] }                 |
+| join | { displayName } | { rtpCapabilities, peers: [{id, displayName, producers: [{producerId, kind, source}]}] } |
 | createWebRtcTransport  | { direction: "send"\|"recv" }                 | { id, direction, iceParameters, iceCandidates, dtlsParameters } |
 | connectWebRtcTransport | { transportId, dtlsParameters }               | {}                                                              |
 | produce                | { transportId, kind, rtpParameters, source? } | { id } — id нового producer                                     |
