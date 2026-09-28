@@ -20,12 +20,17 @@ export function useRoom({ session }) {
     device: null,
     sendTransport: null,
     recvTransport: null,
+    recvTransportPromise: null,
     consumers: new Map(), // consumerId -> { consumer, peerId, key }
   })
 
   useEffect(() => {
     let disposed = false
     const refs = r.current
+
+    // producers, о которых узнали до готовности Device — попробуем после
+    const pendingProducerIds = new Set()
+    const triedProducerIds = new Set() // защита от двойного consume одного producer
 
     // состояние списка участников
 
@@ -58,19 +63,33 @@ export function useRoom({ session }) {
 
     //  приём потоков
 
+    function closeRecvTransport() {
+      refs.recvTransport?.close()
+      refs.recvTransport = null
+      refs.recvTransportPromise = null
+    }
+
     async function ensureRecvTransport() {
-      if (refs.recvTransport) return refs.recvTransport
-      const transport = refs.device.createRecvTransport(
-        await refs.signaling.request('createWebRtcTransport', { direction: 'recv' }),
-      )
-      transport.on('connect', ({ dtlsParameters }, callback, errback) => {
-        refs.signaling
-          .request('connectWebRtcTransport', { transportId: transport.id, dtlsParameters })
-          .then(callback)
-          .catch(errback)
-      })
-      refs.recvTransport = transport
-      return transport
+      // два newProducer подряд не должны создать два транспорта
+      if (!refs.recvTransportPromise) {
+        refs.recvTransportPromise = (async () => {
+          const transport = refs.device.createRecvTransport(
+            await refs.signaling.request('createWebRtcTransport', { direction: 'recv' }),
+          )
+          transport.on('connect', ({ dtlsParameters }, callback, errback) => {
+            refs.signaling
+              .request('connectWebRtcTransport', { transportId: transport.id, dtlsParameters })
+              .then(callback)
+              .catch(errback)
+          })
+          refs.recvTransport = transport
+          return transport
+        })()
+        refs.recvTransportPromise.catch(() => {
+          refs.recvTransportPromise = null // неудача — следующая попытка создаст заново
+        })
+      }
+      return refs.recvTransportPromise
     }
 
     async function consumeProducer({ producerId }) {
@@ -88,7 +107,6 @@ export function useRoom({ session }) {
         kind: data.kind,
         rtpParameters: data.rtpParameters,
         appData: { source: data.source },
-        paused: true,
       })
 
       const key = `${data.source}:${data.kind}` // webcam:audio | webcam:video | screen:video
@@ -103,7 +121,20 @@ export function useRoom({ session }) {
 
       // track готов к воспроизведению — снимаем паузу на сервере и локально
       await refs.signaling.request('resumeConsumer', { consumerId: consumer.id })
-      await consumer.resume()
+      //await consumer.resume()
+    }
+
+    function requestConsume(producerId) {
+      if (triedProducerIds.has(producerId)) return
+      triedProducerIds.add(producerId)
+      if (!refs.device) {
+        pendingProducerIds.add(producerId) // Device ещё не готов — отложим
+        return
+      }
+      consumeProducer({ producerId }).catch((e) => {
+        console.error('[consume] не удалось начать приём:', e.message)
+        triedProducerIds.delete(producerId) // разрешаем повторную попытку
+      })
     }
 
     // уведомления сервера
@@ -122,9 +153,7 @@ export function useRoom({ session }) {
           )
           break
         case 'producerClosed':
-          for (const [id, entry] of [...refs.consumers]) {
-            if (entry.consumer.producerId === data.producerId) removeConsumerTrack(id)
-          }
+          requestConsume(data.producerId)
           break
         case 'consumerClosed':
           removeConsumerTrack(data.consumerId)
@@ -139,10 +168,13 @@ export function useRoom({ session }) {
         roomId: session.roomId,
         onNotification: handleNotification,
         onClosed: () => {
-          if (!disposed) {
-            setPhase('error')
-            setError('Соединение с комнатой потеряно')
-          }
+          if (disposed) return
+          refs.sendTransport?.close()
+          refs.sendTransport = null
+          refs.recvTransport?.close()
+          refs.recvTransport = null
+          setPhase('error')
+          setError('Соединение с комнатой потеряно')
         },
       })
       refs.signaling = signaling
@@ -197,13 +229,16 @@ export function useRoom({ session }) {
 
       setPhase('joined')
 
-      // 5) потоки тех, кто уже сидит в комнате
+      // 5) потоки тех, кто уже в комнате
       for (const peer of joined.peers) {
-        for (const producer of peer.producers) {
-          consumeProducer({ producerId: producer.producerId }).catch((e) =>
-            console.error('[consume] не удалось начать приём:', e.message),
-          )
+        for (const producer of peer.producers ?? []) {
+          requestConsume(producer.producerId)
         }
+      }
+      // и те, что успели появиться, пока грузился Device
+      for (const producerId of [...pendingProducerIds]) {
+        pendingProducerIds.delete(producerId)
+        requestConsume(producerId)
       }
     }
 
@@ -213,17 +248,17 @@ export function useRoom({ session }) {
       setError(ERROR_TEXT[e.code] ?? e.message)
     })
 
+    // cleanup — выполняется при размонтировании (в т.ч. при выходе из комнаты)
     return () => {
       disposed = true
       refs.signaling?.close()
       refs.sendTransport?.close()
-      refs.recvTransport?.close()
+      closeRecvTransport()
       for (const { consumer } of refs.consumers.values()) consumer.close()
       refs.consumers.clear()
       refs.signaling = null
       refs.device = null
       refs.sendTransport = null
-      refs.recvTransport = null
     }
   }, [session])
 
