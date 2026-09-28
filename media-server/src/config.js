@@ -25,7 +25,7 @@ module.exports = {
         },
       ],
       enableUdp: true,
-      enableTcp: true,
+      enableTcp: false,
       preferUdp: true,
     },
   },

@@ -84,6 +84,11 @@ async function createWebRtcTransport(peer, _roomId, data) {
   if (direction === 'recv') options.initialAvailableOutgoingBitrate = 1_000_000;
 
   const transport = await peer.room.router.createWebRtcTransport(options);
+
+  console.log(
+    `[transport ${direction}] ports: ${transport.iceCandidates.map((c) => `${c.port}/${c.protocol}`).join(', ')}`,
+  );
+
   peer.transports.set(transport.id, transport);
 
   transport.on('icestatechange', (state) => {
@@ -150,6 +155,10 @@ async function produce(peer, _roomId, data) {
   });
   peer.producers.set(producer.id, producer);
 
+  producer.on('score', (score) =>
+    console.log(`[score] producer ${data.kind}/${source}: ${JSON.stringify(score)}`),
+  )
+
   producer.on('transportclose', () => peer.producers.delete(producer.id));
 
   for (const other of peer.room.peers.values()) {
@@ -188,8 +197,13 @@ async function consume(peer, _roomId, data) {
     peer.consumers.delete(consumer.id);
     peer.send('consumerClosed', { consumerId: consumer.id });
   });
+  consumer.on('score', (score) =>
+    console.log(
+      `[score] consumer ${producer.appData.source}/${consumer.kind} → ${peer.displayName}: ${JSON.stringify(score)}`,
+    ),
+  );
 
-  console.log(`[consumer] ${owner.displayName} → ${peer.displayName}: ${source}/${consumer.kind}`)
+  console.log(`[consumer] ${owner.displayName} → ${peer.displayName}: ${producer.appData.source}/${consumer.kind}`);
 
   return {
     id: consumer.id,
@@ -205,6 +219,9 @@ async function resumeConsumer(peer, _roomId, data) {
   assertJoined(peer);
   const consumer = peer.consumers.get(data.consumerId);
   if (!consumer) throw new Error('Consumer not found');
+  console.log(
+    `[resumeConsumer] ${peer.displayName}: ${data.consumerId.slice(0, 8)}, был на паузе: ${consumer.paused}`
+  )
   await consumer.resume();
   return {};
 }
