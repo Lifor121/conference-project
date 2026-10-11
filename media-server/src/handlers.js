@@ -14,6 +14,7 @@ function peerInfo(peer) {
       producerId: p.id,
       kind: p.kind,
       source: p.appData.source,
+      paused: p.paused,
     })),
   }
 }
@@ -212,6 +213,7 @@ async function consume(peer, _roomId, data) {
     kind: consumer.kind,
     rtpParameters: consumer.rtpParameters,
     source: producer.appData.source,
+    producerPaused: producer.paused,
   };
 }
 
@@ -226,6 +228,36 @@ async function resumeConsumer(peer, _roomId, data) {
   return {};
 }
 
+// пауза/возобновление своих producers (mute, камера)
+
+function notifyProducerState(peer, producer, notification) {
+  for (const other of peer.room.peers.values()) {
+    if (other.id !== peer.id) {
+      other.send(notification, { peerId: peer.id, producerId: producer.id });
+    }
+  }
+}
+
+async function pauseProducer(peer, _roomId, data) {
+  assertJoined(peer);
+  const producer = peer.producers.get(data.producerId);
+  if (!producer) throw new Error('Producer not found');
+  await producer.pause();
+  notifyProducerState(peer, producer, 'producerPaused');
+  console.log(`[producer] ${peer.displayName}: pause ${producer.appData.source}/${producer.kind}`);
+  return {};
+}
+
+async function resumeProducer(peer, _roomId, data) {
+  assertJoined(peer);
+  const producer = peer.producers.get(data.producerId);
+  if (!producer) throw new Error('Producer not found');
+  await producer.resume();
+  notifyProducerState(peer, producer, 'producerResumed');
+  console.log(`[producer] ${peer.displayName}: resume ${producer.appData.source}/${producer.kind}`);
+  return {};
+}
+
 const handlers = {
   join,
   createWebRtcTransport,
@@ -233,6 +265,8 @@ const handlers = {
   produce,
   consume,
   resumeConsumer,
+  pauseProducer,
+  resumeProducer,
 };
 
 module.exports = { handlers };

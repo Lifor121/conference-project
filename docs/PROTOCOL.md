@@ -25,6 +25,8 @@ id генерирует клиентом (инкремент), сервер ко
 | produce                | { transportId, kind, rtpParameters, source? } | { id } — id нового producer                                     |
 | consume                | { transportId, producerId, rtpCapabilities }  | { id, producerId, peerId, kind, rtpParameters, source }         |
 | resumeConsumer         | { consumerId }                                | {}                                                              |
+| pauseProducer | { producerId } | {} |
+| resumeProducer | { producerId } | {} |
 
 Правила:
 
@@ -45,6 +47,8 @@ id генерирует клиентом (инкремент), сервер ко
 | newProducer    | { peerId, producerId, kind, source } — можно делать consume |
 | producerClosed | { peerId, producerId } — источник выключен/заменён          |
 | consumerClosed | { consumerId } — ваш consumer умер (источник пропал)        |
+| producerPaused | { peerId, producerId } — источник на паузе (mute / камера выкл) |
+| producerResumed | { peerId, producerId } — источник снова активен |
 
 ## Переподключение
 

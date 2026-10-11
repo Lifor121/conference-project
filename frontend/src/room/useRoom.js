@@ -14,6 +14,19 @@ export function useRoom({ session }) {
   const [error, setError] = useState(null)
   const [remotePeers, setRemotePeers] = useState([])
 
+  // локальное состояние и контролы
+  const [audioEnabled, setAudioEnabledState] = useState(session.audioEnabled)
+  const [videoEnabled, setVideoEnabledState] = useState(session.videoEnabled)
+  const [localVideoTrack, setLocalVideoTrack] = useState(
+    () => session.stream?.getVideoTracks()[0] ?? null,
+  )
+  // ref-зеркала: контролы читают актуальное значение без stale-замыканий
+  const audioEnabledRef = useRef(session.audioEnabled)
+  const videoEnabledRef = useRef(session.videoEnabled)
+
+  const setAudioEnabled = (v) => { audioEnabledRef.current = v; setAudioEnabledState(v) }
+  const setVideoEnabled = (v) => { videoEnabledRef.current = v; setVideoEnabledState(v) }
+
   // mediasoup-объекты — в ref: их изменения не должны вызывать рендеры
   const r = useRef({
     signaling: null,
@@ -21,8 +34,92 @@ export function useRoom({ session }) {
     sendTransport: null,
     recvTransport: null,
     recvTransportPromise: null,
-    consumers: new Map(), // consumerId -> { consumer, peerId, key }
+    producers: new Map(),       // 'webcam:audio' | 'webcam:video' -> Producer
+    consumers: new Map(),       // consumerId -> { consumer, peerId, key }
+    extraLocalTracks: new Set(), // треки, полученные уже внутри комнаты  })
   })
+
+  // регистрируем producer + реакция на выдёргивание устройства
+  function watchProducer(producer, key) {
+    r.current.producers.set(key, producer)
+    producer.on('trackended', () => {
+      console.warn(`[producer] ${key}: трек закончился (устройство отключилось?)`)
+      r.current.signaling
+        ?.request('pauseProducer', { producerId: producer.id })
+        .catch(() => {})
+      if (key === 'webcam:audio') setAudioEnabled(false)
+      if (key === 'webcam:video') setVideoEnabled(false)
+    })
+  }
+
+  // --- контролы (вызываются из RoomView) ---
+
+  async function toggleAudio() {
+    const refs = r.current
+    if (!refs.signaling) return
+    const producer = refs.producers.get('webcam:audio')
+    try {
+      if (audioEnabledRef.current && producer) {
+        await refs.signaling.request('pauseProducer', { producerId: producer.id })
+        setAudioEnabled(false)
+      } else if (producer) {
+        await refs.signaling.request('resumeProducer', { producerId: producer.id })
+        setAudioEnabled(true)
+      } else {
+        // микрофона при входе не было — получаем и публикуем сейчас
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: { deviceId: session.devices?.micId || undefined },
+        })
+        const track = stream.getAudioTracks()[0]
+        if (!track) throw new Error('Микрофон не найден')
+        try {
+          const p = await refs.sendTransport.produce({ track, appData: { source: 'webcam' } })
+          watchProducer(p, 'webcam:audio')
+          refs.extraLocalTracks.add(track)
+          setAudioEnabled(true)
+        } catch (e) {
+          track.stop() // публикация не удалась — камеру... микрофон не оставляем включённым
+          throw e
+        }
+      }
+    } catch (e) {
+      console.error('[toggleAudio]', e.message)
+    }
+  }
+
+  async function toggleVideo() {
+    const refs = r.current
+    if (!refs.signaling) return
+    const producer = refs.producers.get('webcam:video')
+    try {
+      if (videoEnabledRef.current && producer) {
+        await refs.signaling.request('pauseProducer', { producerId: producer.id })
+        setVideoEnabled(false)
+      } else if (producer) {
+        await refs.signaling.request('resumeProducer', { producerId: producer.id })
+        setVideoEnabled(true)
+      } else {
+        // камеры при входе не было — получаем и публикуем сейчас
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { deviceId: session.devices?.cameraId || undefined },
+        })
+        const track = stream.getVideoTracks()[0]
+        if (!track) throw new Error('Камера не найдена')
+        try {
+          const p = await refs.sendTransport.produce({ track, appData: { source: 'webcam' } })
+          watchProducer(p, 'webcam:video')
+          refs.extraLocalTracks.add(track)
+          setLocalVideoTrack(track)
+          setVideoEnabled(true)
+        } catch (e) {
+          track.stop() // publish не удался — не оставляем камеру включённой
+          throw e
+        }
+      }
+    } catch (e) {
+      console.error('[toggleVideo]', e.message)
+    }
+  }
 
   useEffect(() => {
     let disposed = false
@@ -113,15 +210,16 @@ export function useRoom({ session }) {
       refs.consumers.set(consumer.id, { consumer, peerId: data.peerId, key })
       consumer.on('transportclose', () => removeConsumerTrack(consumer.id))
 
+      // если источник уже на паузе — трек в UI не показываем, consumer не резюмим
+      const track = data.producerPaused ? null : consumer.track
       setRemotePeers((prev) =>
         prev.map((p) =>
-          p.id === data.peerId ? { ...p, tracks: { ...p.tracks, [key]: consumer.track } } : p,
+          p.id === data.peerId ? { ...p, tracks: { ...p.tracks, [key]: track } } : p,
         ),
       )
-
-      // track готов к воспроизведению — снимаем паузу на сервере и локально
-      await refs.signaling.request('resumeConsumer', { consumerId: consumer.id })
-      //await consumer.resume()
+      if (!data.producerPaused) {
+        await refs.signaling.request('resumeConsumer', { consumerId: consumer.id })
+      }
     }
 
     function requestConsume(producerId) {
@@ -135,6 +233,25 @@ export function useRoom({ session }) {
         console.error('[consume] не удалось начать приём:', e.message)
         triedProducerIds.delete(producerId) // разрешаем повторную попытку
       })
+    }
+
+    // кто-то замьютился / включил камеру — обновляем треки в UI
+    function setProducerPaused({ producerId }, paused) {
+      for (const entry of refs.consumers.values()) {
+        if (entry.consumer.producerId !== producerId) continue
+        const track = paused ? null : entry.consumer.track
+        setRemotePeers((prev) =>
+          prev.map((p) =>
+            p.id === entry.peerId ? { ...p, tracks: { ...p.tracks, [entry.key]: track } } : p,
+          ),
+        )
+        if (!paused) {
+          // consumer мог быть создан на паузе (источник был выключен) — резюмим
+          refs.signaling
+            .request('resumeConsumer', { consumerId: entry.consumer.id })
+            .catch(() => {})
+        }
+      }
     }
 
     // уведомления сервера
@@ -155,6 +272,12 @@ export function useRoom({ session }) {
         case 'producerClosed':
           requestConsume(data.producerId)
           break
+        case 'producerPaused':
+          setProducerPaused(data, true)
+          break
+        case 'producerResumed':
+          setProducerPaused(data, false)
+          break
         case 'consumerClosed':
           removeConsumerTrack(data.consumerId)
           break
@@ -171,8 +294,6 @@ export function useRoom({ session }) {
           if (disposed) return
           refs.sendTransport?.close()
           refs.sendTransport = null
-          refs.recvTransport?.close()
-          refs.recvTransport = null
           setPhase('error')
           setError('Соединение с комнатой потеряно')
         },
@@ -256,11 +377,18 @@ export function useRoom({ session }) {
       closeRecvTransport()
       for (const { consumer } of refs.consumers.values()) consumer.close()
       refs.consumers.clear()
+      for (const track of refs.extraLocalTracks) track.stop()
+      refs.extraLocalTracks.clear()
+      refs.producers.clear()
       refs.signaling = null
       refs.device = null
       refs.sendTransport = null
     }
   }, [session])
 
-  return { phase, error, remotePeers }
+  return {
+    phase, error, remotePeers,
+    audioEnabled, videoEnabled, localVideoTrack,
+    toggleAudio, toggleVideo,
+  }
 }

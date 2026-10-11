@@ -53,17 +53,21 @@ function RemotePeerTiles({ peer }) {
 }
 
 export default function RoomView({ session, onLeave }) {
-  const { phase, error, remotePeers } = useRoom({ session })
-  const myVideoTrack = session.stream?.getVideoTracks()[0] ?? null
+  const {
+    phase, error, remotePeers,
+    audioEnabled, videoEnabled, localVideoTrack,
+    toggleAudio, toggleVideo,
+  } = useRoom({ session })
+
+  const hasMic = !!session.stream?.getAudioTracks().length
+  const joined = phase === 'joined'
 
   if (phase === 'error') {
     return (
       <main className="room">
         <div className="fullscreen-message">
           <p className="error">{error}</p>
-          <button className="primary" onClick={onLeave}>
-            На экран входа
-          </button>
+          <button className="primary" onClick={onLeave}>На экран входа</button>
         </div>
       </main>
     )
@@ -73,16 +77,15 @@ export default function RoomView({ session, onLeave }) {
     <main className="room">
       <header className="room-header">
         <span className="muted">
-          Комната {session.roomId.slice(0, 8)}… · {phase === 'joined' ? 'в эфире' : 'подключение…'}
+          Комната {session.roomId.slice(0, 8)}… · {joined ? 'в эфире' : 'подключение…'}
         </span>
-        <button onClick={onLeave}>Покинуть встречу</button>
       </header>
 
       <div className="video-grid">
         <VideoTile
           key="me"
-          track={session.videoEnabled ? myVideoTrack : null}
-          label={`${session.displayName} (вы)${session.audioEnabled ? '' : ' 🔇'}`}
+          track={videoEnabled ? localVideoTrack : null}
+          label={`${session.displayName} (вы)${audioEnabled ? '' : ' 🔇'}`}
           fallbackInitial={session.displayName[0]}
         />
         {remotePeers.map((p) => (
@@ -93,6 +96,28 @@ export default function RoomView({ session, onLeave }) {
       {remotePeers.map((p) => (
         <AudioSink key={p.id} track={p.tracks['webcam:audio']} />
       ))}
+
+      <footer className="room-footer">
+        <div className="controls">
+          <button
+            className={audioEnabled ? 'ctl on' : 'ctl off'}
+            onClick={toggleAudio}
+            disabled={!joined || !hasMic}
+            title={hasMic ? (audioEnabled ? 'Выключить микрофон' : 'Включить микрофон') : 'Микрофона нет'}
+          >
+            {audioEnabled ? '🎙' : '🔇'}
+          </button>
+          <button
+            className={videoEnabled ? 'ctl on' : 'ctl off'}
+            onClick={toggleVideo}
+            disabled={!joined}
+            title={videoEnabled ? 'Выключить камеру' : 'Включить камеру'}
+          >
+            {videoEnabled ? '📹' : '📷'}
+          </button>
+          <button className="ctl leave" onClick={onLeave}>Покинуть</button>
+        </div>
+      </footer>
     </main>
   )
 }
