@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useRef } from 'react'
 import { useRoom } from '../room/useRoom.js'
+import { LeaveIcon, MicIcon, MicOffIcon, VideoIcon, VideoOffIcon } from './icons.jsx'
 
-// Видеотайл: принимает ОДИН трек (или null → аватар).
-// muted обязателен: аудио играем отдельными элементами ниже, иначе эхо.
-function VideoTile({ track, label, fallbackInitial }) {
+function VideoTile({ track, label, muted, fallbackInitial }) {
   const ref = useRef(null)
   const stream = useMemo(() => (track ? new MediaStream([track]) : null), [track])
 
@@ -18,16 +17,25 @@ function VideoTile({ track, label, fallbackInitial }) {
       ) : (
         <div className="avatar">{fallbackInitial}</div>
       )}
-      <div className="tile-label">{label}</div>
+      <div className="tile-label">
+        {muted && <MicOffIcon className="tile-mute" />}
+        {label}
+      </div>
     </div>
   )
 }
 
-// Скрытый <audio> на каждый голосовой трек удалённого участника
 function AudioSink({ track }) {
   const ref = useRef(null)
   useEffect(() => {
-    if (ref.current && track) ref.current.srcObject = new MediaStream([track])
+    const el = ref.current
+    if (!el || !track) return
+    el.srcObject = new MediaStream([track])
+    el.play().catch(() => {
+      el.muted = true
+      el.play().catch(() => {})
+    })
+    return () => { el.srcObject = null }
   }, [track])
   if (!track) return null
   return <audio ref={ref} autoPlay />
@@ -38,6 +46,7 @@ function RemotePeerTiles({ peer }) {
     <>
       <VideoTile
         track={peer.tracks['webcam:video']}
+        muted={!peer.tracks['webcam:audio']}
         label={peer.displayName}
         fallbackInitial={peer.displayName[0]}
       />
@@ -45,7 +54,7 @@ function RemotePeerTiles({ peer }) {
         <VideoTile
           track={peer.tracks['screen:video']}
           label={`${peer.displayName} — экран`}
-          fallbackInitial="🖥"
+          fallbackInitial="—"
         />
       )}
     </>
@@ -59,7 +68,6 @@ export default function RoomView({ session, onLeave }) {
     toggleAudio, toggleVideo,
   } = useRoom({ session })
 
-  const hasMic = !!session.stream?.getAudioTracks().length
   const joined = phase === 'joined'
 
   if (phase === 'error') {
@@ -85,13 +93,21 @@ export default function RoomView({ session, onLeave }) {
         <VideoTile
           key="me"
           track={videoEnabled ? localVideoTrack : null}
-          label={`${session.displayName} (вы)${audioEnabled ? '' : ' 🔇'}`}
+          muted={!audioEnabled}
+          label={`${session.displayName} (вы)`}
           fallbackInitial={session.displayName[0]}
         />
         {remotePeers.map((p) => (
           <RemotePeerTiles key={p.id} peer={p} />
         ))}
       </div>
+
+      {phase === 'connecting' && (
+        <div className="connecting-overlay">
+          <div className="spinner" />
+          Подключение к комнате…
+        </div>
+      )}
 
       {remotePeers.map((p) => (
         <AudioSink key={p.id} track={p.tracks['webcam:audio']} />
@@ -102,10 +118,10 @@ export default function RoomView({ session, onLeave }) {
           <button
             className={audioEnabled ? 'ctl on' : 'ctl off'}
             onClick={toggleAudio}
-            disabled={!joined || !hasMic}
-            title={hasMic ? (audioEnabled ? 'Выключить микрофон' : 'Включить микрофон') : 'Микрофона нет'}
+            disabled={!joined}
+            title={audioEnabled ? 'Выключить микрофон' : 'Включить микрофон'}
           >
-            {audioEnabled ? '🎙' : '🔇'}
+            {audioEnabled ? <MicIcon /> : <MicOffIcon />}
           </button>
           <button
             className={videoEnabled ? 'ctl on' : 'ctl off'}
@@ -113,9 +129,11 @@ export default function RoomView({ session, onLeave }) {
             disabled={!joined}
             title={videoEnabled ? 'Выключить камеру' : 'Включить камеру'}
           >
-            {videoEnabled ? '📹' : '📷'}
+            {videoEnabled ? <VideoIcon /> : <VideoOffIcon />}
           </button>
-          <button className="ctl leave" onClick={onLeave}>Покинуть</button>
+          <button className="ctl leave" onClick={onLeave} title="Покинуть встречу">
+            <LeaveIcon />
+          </button>
         </div>
       </footer>
     </main>
