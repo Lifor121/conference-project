@@ -20,7 +20,27 @@ app.get('/stats', (_req, res) => {
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 1024 * 1024 });
 
+// heartbeat: браузеры отвечают на protocol-level ping автоматически.
+// Нет ответа два цикла подряд — соединение мертво:
+// terminate -> 'close' -> removePeer
+const HEARTBEAT_MS = 10000;
+
+const heartbeat = setInterval(() => {
+  for (const client of wss.clients) {
+    if (client.isAlive === false) {
+      client.terminate();
+      continue;
+    }
+    client.isAlive = false;
+    client.ping();
+  }
+}, HEARTBEAT_MS);
+
+wss.on('close', () => clearInterval(heartbeat));
+
 wss.on('connection', (socket, req) => {
+  socket.isAlive = true;
+  socket.on('pong', () => { socket.isAlive = true; });
   const url = new URL(req.url, 'http://localhost');
   const roomId = url.searchParams.get('roomId');
 
