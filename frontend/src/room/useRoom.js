@@ -60,14 +60,7 @@ export function useRoom({ session }) {
     if (!refs.signaling) return
     const producer = refs.producers.get('webcam:audio')
     try {
-      if (audioEnabledRef.current && producer) {
-        await refs.signaling.request('pauseProducer', { producerId: producer.id })
-        setAudioEnabled(false)
-      } else if (producer) {
-        await refs.signaling.request('resumeProducer', { producerId: producer.id })
-        setAudioEnabled(true)
-      } else {
-        // микрофона при входе не было — получаем и публикуем сейчас
+      if (!producer) {
         const stream = await navigator.mediaDevices.getUserMedia({
           audio: { deviceId: session.devices?.micId || undefined },
         })
@@ -79,9 +72,19 @@ export function useRoom({ session }) {
           refs.extraLocalTracks.add(track)
           setAudioEnabled(true)
         } catch (e) {
-          track.stop() // публикация не удалась — камеру... микрофон не оставляем включённым
+          track.stop()
           throw e
         }
+        return
+      }
+      if (audioEnabledRef.current) {
+        producer.pause() // локально: трек гасится, кадры не кодируются
+        await refs.signaling.request('pauseProducer', { producerId: producer.id }) // серверно + нотификация другим
+        setAudioEnabled(false)
+      } else {
+        producer.resume()
+        await refs.signaling.request('resumeProducer', { producerId: producer.id })
+        setAudioEnabled(true)
       }
     } catch (e) {
       console.error('[toggleAudio]', e.message)
@@ -93,14 +96,7 @@ export function useRoom({ session }) {
     if (!refs.signaling) return
     const producer = refs.producers.get('webcam:video')
     try {
-      if (videoEnabledRef.current && producer) {
-        await refs.signaling.request('pauseProducer', { producerId: producer.id })
-        setVideoEnabled(false)
-      } else if (producer) {
-        await refs.signaling.request('resumeProducer', { producerId: producer.id })
-        setVideoEnabled(true)
-      } else {
-        // камеры при входе не было — получаем и публикуем сейчас
+      if (!producer) {
         const stream = await navigator.mediaDevices.getUserMedia({
           video: { deviceId: session.devices?.cameraId || undefined },
         })
@@ -113,9 +109,19 @@ export function useRoom({ session }) {
           setLocalVideoTrack(track)
           setVideoEnabled(true)
         } catch (e) {
-          track.stop() // publish не удался — не оставляем камеру включённой
+          track.stop()
           throw e
         }
+        return
+      }
+      if (videoEnabledRef.current) {
+        producer.pause()
+        await refs.signaling.request('pauseProducer', { producerId: producer.id })
+        setVideoEnabled(false)
+      } else {
+        producer.resume()
+        await refs.signaling.request('resumeProducer', { producerId: producer.id })
+        setVideoEnabled(true)
       }
     } catch (e) {
       console.error('[toggleVideo]', e.message)
@@ -345,12 +351,35 @@ export function useRoom({ session }) {
       const publishes = []
       const audioTrack = session.stream?.getAudioTracks()[0]
       const videoTrack = session.stream?.getVideoTracks()[0]
-      if (audioTrack)
-        publishes.push(sendTransport.produce({ track: audioTrack, appData: { source: 'webcam' } }))
-      if (videoTrack)
-        publishes.push(sendTransport.produce({ track: videoTrack, appData: { source: 'webcam' } }))
+      if (audioTrack) {
+        audioTrack.enabled = session.audioEnabled
+        publishes.push(
+          sendTransport.produce({ track: audioTrack, appData: { source: 'webcam' } })
+            .then((p) => watchProducer(p, 'webcam:audio')),
+        )
+      }
+      if (videoTrack) {
+        videoTrack.enabled = session.videoEnabled
+        publishes.push(
+          sendTransport.produce({ track: videoTrack, appData: { source: 'webcam' } })
+            .then((p) => watchProducer(p, 'webcam:video')),
+        )
+      }
       await Promise.all(publishes)
       if (disposed) return
+
+      const pauses = []
+        if (audioTrack && !session.audioEnabled) {
+          pauses.push(refs.signaling.request('pauseProducer', {
+            producerId: refs.producers.get('webcam:audio').id,
+          }))
+        }
+        if (videoTrack && !session.videoEnabled) {
+          pauses.push(refs.signaling.request('pauseProducer', {
+            producerId: refs.producers.get('webcam:video').id,
+          }))
+        }
+        await Promise.all(pauses)
 
       setPhase('joined')
 

@@ -1,105 +1,107 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 const DEFAULT_NAME = 'Гость'
 
-// Экран перед входом: имя, превью, выбор устройств, вкл/выкл микрофона и камеры.
-// Итог сессии (владение stream, выбранные устройства, что включено) уезжает наверх
+
 export default function PreJoinScreen({ roomId, onJoin }) {
   const videoRef = useRef(null)
   const streamRef = useRef(null)
-  // когда поток передаётся в комнату, останавливать его при размонтировании нельзя
+  if (streamRef.current === null) streamRef.current = new MediaStream()
   const handedOffRef = useRef(false)
+  const aliveRef = useRef(true)
 
   const [displayName, setDisplayName] = useState(
     () => localStorage.getItem('vc:displayName') || '',
   )
-  const [mediaOn, setMediaOn] = useState({ audio: true, video: true })
+  // { status: 'requesting' | 'ready' | 'denied' | 'error', on: bool, error: string|null }
+  const [audio, setAudio] = useState({ status: 'requesting', on: true, error: null })
+  const [video, setVideo] = useState({ status: 'requesting', on: true, error: null })
   const [selected, setSelected] = useState({ cameraId: '', micId: '' })
   const [devices, setDevices] = useState({ cameras: [], mics: [] })
-  const [status, setStatus] = useState('requesting') // requesting | ready | denied | error
-  const [error, setError] = useState(null)
 
-  // (пере)запрашиваем поток: при монтировании, смене устройства, вкл/выкл
-  useEffect(() => {
-    let cancelled = false
-
-    async function start() {
-      if (!mediaOn.audio && !mediaOn.video) {
-        // getUserMedia с audio:false, video:false — TypeError. Просто чистим превью.
-        streamRef.current?.getTracks().forEach((t) => t.stop())
-        streamRef.current = null
-        if (videoRef.current) videoRef.current.srcObject = null
-        setStatus('ready')
+  const acquire = useCallback(async (kind, deviceId) => {
+    const setState = kind === 'audio' ? setAudio : setVideo
+    setState((s) => ({ ...s, status: 'requesting', error: null }))
+    try {
+      const constraints =
+        kind === 'audio'
+          ? { audio: deviceId ? { deviceId: { exact: deviceId } } : true }
+          : { video: deviceId ? { deviceId: { exact: deviceId } } : true }
+      const stream = await navigator.mediaDevices.getUserMedia(constraints)
+      const track = stream.getTracks()[0]
+      if (!aliveRef.current) {
+        track.stop() // размонтировались, пока ждали ответа
         return
       }
 
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          // deviceId без exact = «предпочтительно»: пропавший id не уронит запрос
-          audio: mediaOn.audio
-            ? { deviceId: selected.micId || undefined }
-            : false,
-          video: mediaOn.video
-            ? { deviceId: selected.cameraId || undefined }
-            : false,
-        })
-        if (cancelled) {
-          stream.getTracks().forEach((t) => t.stop()) // размонтировались, пока ждали
-          return
-        }
-        streamRef.current?.getTracks().forEach((t) => t.stop())
-        streamRef.current = stream
-        if (videoRef.current) videoRef.current.srcObject = stream
-        setStatus('ready')
+      // заменяем трек этого вида в общем стриме (смена устройства)
+      const old = streamRef.current.getTracks().find((t) => t.kind === kind)
+      if (old) {
+        streamRef.current.removeTrack(old)
+        old.stop()
+      }
+      streamRef.current.addTrack(track)
+      track.enabled = true
+      setState((s) => ({ ...s, status: 'ready', error: null }))
 
-        // названия устройств доступны только после выдачи разрешения
-        const all = await navigator.mediaDevices.enumerateDevices()
-        if (cancelled) return
-        setDevices({
-          cameras: all.filter((d) => d.kind === 'videoinput'),
-          mics: all.filter((d) => d.kind === 'audioinput'),
-        })
-        // фиксируем устройства по умолчанию, чтобы селекты показывали истину
-        setSelected((prev) => ({
-          cameraId: prev.cameraId || (stream.getVideoTracks()[0]?.getSettings().deviceId ?? ''),
-          micId: prev.micId || (stream.getAudioTracks()[0]?.getSettings().deviceId ?? ''),
-        }))
-      } catch (e) {
-        if (cancelled) return
-        if (e.name === 'NotAllowedError') {
-          setStatus('denied')
-          setError(null)
-        } else {
-          setStatus('error')
-          setError(e.message)
-        }
+      // названия устройств доступны только после выдачи разрешения
+      const all = await navigator.mediaDevices.enumerateDevices()
+      if (!aliveRef.current) return
+      setDevices({
+        cameras: all.filter((d) => d.kind === 'videoinput'),
+        mics: all.filter((d) => d.kind === 'audioinput'),
+      })
+      const { deviceId: usedId } = track.getSettings()
+      setSelected((prev) =>
+        kind === 'video'
+          ? { ...prev, cameraId: usedId ?? prev.cameraId }
+          : { ...prev, micId: usedId ?? prev.micId },
+      )
+    } catch (e) {
+      if (!aliveRef.current) return
+      if (e.name === 'NotAllowedError') {
+        setState((s) => ({ ...s, status: 'denied' }))
+      } else {
+        setState((s) => ({ ...s, status: 'error', error: `${e.name}: ${e.message}` }))
       }
     }
+  }, [])
 
-    start()
+  useEffect(() => {
+    aliveRef.current = true
+    acquire('audio')
+    acquire('video')
     return () => {
-      cancelled = true
-      // StrictMode в dev запускает эффект дважды: без cleanup потекла бы камера
-      // (и горел бы индикатор). Плюс это же — остановка при уходе с экрана.
+      aliveRef.current = false
       if (!handedOffRef.current) {
-        streamRef.current?.getTracks().forEach((t) => t.stop())
-        streamRef.current = null
+        streamRef.current.getTracks().forEach((t) => t.stop())
       }
     }
-  }, [mediaOn.audio, mediaOn.video, selected.cameraId, selected.micId])
+  }, [acquire])
+
+  useEffect(() => {
+    if (videoRef.current) videoRef.current.srcObject = streamRef.current
+  }, [video.status])
+
+  function toggle(kind) {
+    const track = streamRef.current.getTracks().find((t) => t.kind === kind)
+    if (!track) return
+    track.enabled = !track.enabled
+    ;(kind === 'audio' ? setAudio : setVideo)((s) => ({ ...s, on: track.enabled }))
+  }
 
   function handleJoin() {
     const name = displayName.trim()
-    if (name) localStorage.setItem('vc:displayName', name) // дефолт не запоминаем
+    if (name) localStorage.setItem('vc:displayName', name)
     const stream = streamRef.current
-    handedOffRef.current = true // владение потоком переезжает в RoomPage
+    handedOffRef.current = true // владение треками переезжает в комнату
     onJoin({
       roomId,
       displayName: name || DEFAULT_NAME,
       stream,
-      // истина — по фактически существующим трекам, а не по тумблерам
-      audioEnabled: !!stream?.getAudioTracks().length,
-      videoEnabled: !!stream?.getVideoTracks().length,
+      // трек существует даже при выключенном тумблере — он просто disabled
+      audioEnabled: stream.getAudioTracks().length > 0 && audio.on,
+      videoEnabled: stream.getVideoTracks().length > 0 && video.on,
       devices: { ...selected },
     })
   }
@@ -108,14 +110,30 @@ export default function PreJoinScreen({ roomId, onJoin }) {
     <main className="prejoin">
       <div className="prejoin-video">
         <video ref={videoRef} autoPlay playsInline muted />
-        {status === 'requesting' && <div className="video-overlay">Запрашиваем доступ к устройствам…</div>}
-        {status === 'denied' && (
+
+        {video.status === 'requesting' && <div className="video-overlay">Запрашиваем камеру…</div>}
+
+        {video.status === 'denied' && (
           <div className="video-overlay">
-            Доступ запрещён. Разрешите его в настройках сайта или войдите
-            без камеры и микрофона.
+            <p>Доступ к камере запрещён.</p>
+            <p className="muted">
+              Разрешите в настройках сайта и нажмите «Повторить»
+            </p>
+            <button onClick={() => acquire('video')}>Повторить</button>
           </div>
         )}
-        {!mediaOn.video && status === 'ready' && <div className="video-overlay">Камера выключена</div>}
+
+        {video.status === 'error' && (
+          <div className="video-overlay">
+            <p>Камера недоступна</p>
+            <p className="muted">{video.error}</p>
+            <button onClick={() => acquire('video')}>Повторить</button>
+          </div>
+        )}
+
+        {video.status === 'ready' && !video.on && (
+          <div className="video-overlay">Камера выключена</div>
+        )}
       </div>
 
       <aside className="prejoin-panel">
@@ -126,10 +144,7 @@ export default function PreJoinScreen({ roomId, onJoin }) {
           Ваше имя
           <input
             value={displayName}
-            onChange={(e) => {
-              setDisplayName(e.target.value)
-              setError(null)
-            }}
+            onChange={(e) => setDisplayName(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleJoin()}
             placeholder="Гость"
             autoFocus
@@ -138,24 +153,35 @@ export default function PreJoinScreen({ roomId, onJoin }) {
 
         <div className="device-row">
           <button
-            className={mediaOn.audio ? 'toggle on' : 'toggle'}
-            onClick={() => setMediaOn((m) => ({ ...m, audio: !m.audio }))}
+            className={audio.on && audio.status === 'ready' ? 'toggle on' : 'toggle'}
+            onClick={() => toggle('audio')}
+            disabled={audio.status !== 'ready'}
           >
-            {mediaOn.audio ? '🎙 Микрофон вкл' : '🔇 Микрофон выкл'}
+            {audio.status !== 'ready' ? 'Микрофон недоступен' : audio.on ? 'Микрофон вкл' : 'Микрофон выкл'}
           </button>
           <button
-            className={mediaOn.video ? 'toggle on' : 'toggle'}
-            onClick={() => setMediaOn((m) => ({ ...m, video: !m.video }))}
+            className={video.on && video.status === 'ready' ? 'toggle on' : 'toggle'}
+            onClick={() => toggle('video')}
+            disabled={video.status !== 'ready'}
           >
-            {mediaOn.video ? '📹 Камера вкл' : '📷 Камера выкл'}
+            {video.status !== 'ready' ? 'Камера недоступна' : video.on ? 'Камера вкл' : 'Камера выкл'}
           </button>
         </div>
+
+        {audio.status === 'denied' && (
+          <p className="error">
+            Микрофон: доступ запрещён. Разрешите в настройках сайта и{' '}
+            <button className="link" onClick={() => acquire('audio')}>повторите</button>.
+          </p>
+        )}
+        {audio.status === 'error' && <p className="error">Микрофон: {audio.error}</p>}
 
         <label>
           Микрофон
           <select
             value={selected.micId}
-            onChange={(e) => setSelected((s) => ({ ...s, micId: e.target.value }))}
+            disabled={audio.status !== 'ready'}
+            onChange={(e) => acquire('audio', e.target.value)}
           >
             {devices.mics.map((d) => (
               <option key={d.deviceId} value={d.deviceId}>{d.label || 'Микрофон'}</option>
@@ -167,7 +193,8 @@ export default function PreJoinScreen({ roomId, onJoin }) {
           Камера
           <select
             value={selected.cameraId}
-            onChange={(e) => setSelected((s) => ({ ...s, cameraId: e.target.value }))}
+            disabled={video.status !== 'ready'}
+            onChange={(e) => acquire('video', e.target.value)}
           >
             {devices.cameras.map((d) => (
               <option key={d.deviceId} value={d.deviceId}>{d.label || 'Камера'}</option>
@@ -175,11 +202,7 @@ export default function PreJoinScreen({ roomId, onJoin }) {
           </select>
         </label>
 
-        {error && <div className="error">{error}</div>}
-
-        <button className="primary" onClick={handleJoin}>
-          Присоединиться
-        </button>
+        <button className="primary" onClick={handleJoin}>Присоединиться</button>
       </aside>
     </main>
   )
