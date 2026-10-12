@@ -43,6 +43,9 @@ export class SignalingClient {
       this.pending.clear()
       if (!this.closedByUs) this.onClosed?.()
     }
+
+    this._onOffline = () => this.ws.close()
+    window.addEventListener('offline', this._onOffline)
   }
 
   async request(method, data = {}) {
@@ -56,6 +59,7 @@ export class SignalingClient {
 
   close() {
     this.closedByUs = true
+    window.removeEventListener('offline', this._onOffline)
     this.ws.close()
   }
 }
