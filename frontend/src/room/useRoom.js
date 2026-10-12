@@ -34,6 +34,7 @@ export function useRoom({ session }) {
     sendTransport: null,
     recvTransport: null,
     recvTransportPromise: null,
+    iceServers: [],
     producers: new Map(),       // 'webcam:audio' | 'webcam:video' -> Producer
     consumers: new Map(),       // consumerId -> { consumer, peerId, key }
     extraLocalTracks: new Set(), // треки, полученные уже внутри комнаты  })
@@ -172,6 +173,7 @@ export function useRoom({ session }) {
         refs.recvTransportPromise = (async () => {
           const transport = refs.device.createRecvTransport(
             await refs.signaling.request('createWebRtcTransport', { direction: 'recv' }),
+            { iceServers: refs.iceServers },
           )
           transport.on('connect', ({ dtlsParameters }, callback, errback) => {
             refs.signaling
@@ -303,6 +305,7 @@ export function useRoom({ session }) {
       // 1) вход
       const joined = await signaling.request('join', { displayName: session.displayName })
       if (disposed) return
+      refs.iceServers = joined.iceServers ?? []
       setRemotePeers(
         joined.peers.map((p) => ({ id: p.id, displayName: p.displayName, tracks: {} })),
       )
@@ -316,6 +319,7 @@ export function useRoom({ session }) {
       // 3) send-транспорт: параметры с сервера, события — протокол
       const sendTransport = device.createSendTransport(
         await signaling.request('createWebRtcTransport', { direction: 'send' }),
+        { iceServers: refs.iceServers },
       )
       if (disposed) return
       sendTransport.on('connect', ({ dtlsParameters }, callback, errback) => {

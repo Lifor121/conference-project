@@ -47,8 +47,11 @@ services:
       MEDIASOUP_RTC_MAX_PORT: 40100
       MAX_PEERS_PER_ROOM: ${MAX_PEERS_PER_ROOM:-50}
       ROOM_CLOSE_DELAY_MS: ${ROOM_CLOSE_DELAY_MS:-15000}
+      STUN_URL: ${STUN_URL:-}
+      TURN_URL: ${TURN_URL:-}
+      TURN_USERNAME: ${TURN_USERNAME:-}
+      TURN_CREDENTIAL: ${TURN_CREDENTIAL:-}
     ports:
-      - "4443:4443"
       - "40000-40100:40000-40100/udp"
     volumes:
       - ./media-server:/app
@@ -57,12 +60,29 @@ services:
 
   frontend:
     build: ./frontend
-    ports:
-      - "5173:5173"
     volumes:
       - ./frontend:/app
       - /app/node_modules   # тот же, что у media
     networks: [ internal ]
+
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    ports:
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/certs:/etc/nginx/certs:ro
+      - ./frontend/dist:/usr/share/nginx/html:ro
+    depends_on: [backend, media]
+    networks: [internal]
+
+  coturn:
+    image: coturn/coturn:latest
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - ./coturn/turnserver.conf:/etc/coturn/turnserver.conf:ro
 
 volumes:
   pgdata:

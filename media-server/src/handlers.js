@@ -23,6 +23,19 @@ function assertJoined(peer) {
   if (!peer.joined) throw new Error('Not joined');
 }
 
+function turnIceServers() {
+  const servers = [];
+  if (process.env.STUN_URL) servers.push({ urls: process.env.STUN_URL });
+  if (process.env.TURN_URL) {
+    servers.push({
+      urls: process.env.TURN_URL,
+      username: process.env.TURN_USERNAME || 'vc',
+      credential: process.env.TURN_CREDENTIAL || 'vc_dev_turn_secret_change_me',
+    });
+  }
+  return servers;
+}
+
 // join
 
 async function join(peer, roomId, data) {
@@ -53,6 +66,7 @@ async function join(peer, roomId, data) {
   return {
     rtpCapabilities: room.rtpCapabilities,
     peers: [...room.peers.values()].filter((p) => p.id !== peer.id).map(peerInfo),
+    iceServers: turnIceServers(),
   };
 }
 
