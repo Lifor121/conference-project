@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
+    "lint": "eslint src",
     "ci": "npm run lint && npm run build"
   },
   "dependencies": {
