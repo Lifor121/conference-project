@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Device } from 'mediasoup-client'
 import { SignalingClient } from '../signaling/SignalingClient.js'
 
@@ -41,17 +41,23 @@ export function useRoom({ session }) {
   })
 
   // регистрируем producer + реакция на выдёргивание устройства
-  function watchProducer(producer, key) {
+  const watchProducer = useCallback((producer, key) => {
     r.current.producers.set(key, producer)
     producer.on('trackended', () => {
       console.warn(`[producer] ${key}: трек закончился (устройство отключилось?)`)
       r.current.signaling
         ?.request('pauseProducer', { producerId: producer.id })
         .catch(() => {})
-      if (key === 'webcam:audio') setAudioEnabled(false)
-      if (key === 'webcam:video') setVideoEnabled(false)
+      if (key === 'webcam:audio') {
+        audioEnabledRef.current = false
+        setAudioEnabledState(false)
+      }
+      if (key === 'webcam:video') {
+        videoEnabledRef.current = false
+        setVideoEnabledState(false)
+      }
     })
-  }
+  }, [])
 
   // --- контролы (вызываются из RoomView) ---
 
@@ -417,7 +423,7 @@ export function useRoom({ session }) {
       refs.device = null
       refs.sendTransport = null
     }
-  }, [session])
+  }, [session, watchProducer])
 
   return {
     phase, error, remotePeers,
