@@ -32,4 +32,12 @@ set-announced-ip:
 	docker compose up -d media; \
 	echo "announced ip → $$LAN_IP"
 
-.PHONY: up down logs migrate migration psql rebuild
+ci-check-frontend:
+	rm -rf /tmp/ci-frontend && cp -r frontend /tmp/ci-frontend
+	cd /tmp/ci-frontend && rm -rf node_modules && npm install && npm run ci
+
+ci-check-media:
+	rm -rf /tmp/ci-media && cp -r media-server /tmp/ci-media
+	cd /tmp/ci-media && rm -rf node_modules && npm install --ignore-scripts && npm run lint
+
+.PHONY: up down logs migrate migration psql rebuild ci-check-frontend ci-check-media
