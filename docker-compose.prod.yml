@@ -22,7 +22,7 @@ services:
       - ./nginx.prod.conf:/etc/nginx/nginx.conf:ro
       - ./frontend-dist:/usr/share/nginx/html:ro
     depends_on: [backend, media]
-    networks: [internal]
+    networks: [internal, proxy-net]
 
   coturn:
     image: coturn/coturn:latest
@@ -62,3 +62,5 @@ volumes:
 networks:
   internal:
     driver: bridge
+  proxy-net:
+    external: true
