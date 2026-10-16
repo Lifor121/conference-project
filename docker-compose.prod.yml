@@ -1,0 +1,64 @@
+services:
+  backend:
+    image: ghcr.io/lifor121/conference-project/backend:latest
+    restart: unless-stopped
+    env_file: .env
+    networks: [internal]
+
+  media:
+    image: ghcr.io/lifor121/conference-project/media:latest
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "40000-40100:40000-40100/udp"
+    networks: [internal]
+
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8443:80"
+    volumes:
+      - ./nginx.prod.conf:/etc/nginx/nginx.conf:ro
+      - ./frontend-dist:/usr/share/nginx/html:ro
+    depends_on: [backend, media]
+    networks: [internal]
+
+  coturn:
+    image: coturn/coturn:latest
+    restart: unless-stopped
+    network_mode: host
+    command:
+      - --listening-port=3478
+      - --external-ip=${MEDIASOUP_ANNOUNCED_IP}
+      - --lt-cred-mech
+      - --static-auth-secret=${TURN_CREDENTIAL}
+      - --realm=vc.local
+      - --min-port=49160
+      - --max-port=49200
+      - --fingerprint
+      - --no-multicast-peers
+      - --no-cli
+      - --no-tlsv1
+      - --no-tlsv1_1
+      - --log-file=stdout
+
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks: [internal]
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    networks: [internal]
+
+volumes:
+  pgdata:
+
+networks:
+  internal:
+    driver: bridge
