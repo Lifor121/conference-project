@@ -43,6 +43,7 @@ wss.on('connection', (socket, req) => {
   socket.on('pong', () => { socket.isAlive = true; });
   const url = new URL(req.url, 'http://localhost');
   const roomId = url.searchParams.get('roomId');
+  const peerId = url.searchParams.get('peerId');
 
   if (!roomId) {
     socket.send(JSON.stringify({ notification: 'error', data: { message: 'roomId query param is required' } }));
@@ -50,7 +51,15 @@ wss.on('connection', (socket, req) => {
     return;
   }
 
-  const peer = new Peer({ socket });
+  // стабильный id вкладки: по нему опознаём вернувшегося участника.
+  // отсутствует только у старых клиентов — тогда id сгенерируем сами
+  if (peerId && !/^[A-Za-z0-9_-]{8,64}$/.test(peerId)) {
+    socket.send(JSON.stringify({ notification: 'error', data: { message: 'Invalid peerId' } }));
+    socket.close();
+    return;
+  }
+
+  const peer = new Peer({ socket, id: peerId });
   console.log(`[ws] connect peer=${peer.id.slice(0, 8)} room=${roomId}`);
 
   socket.on('message', async (raw) => {

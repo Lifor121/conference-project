@@ -1,8 +1,10 @@
 const crypto = require('node:crypto');
 
 class Peer {
-  constructor({ socket }) {
-    this.id = crypto.randomUUID();
+  // id можно передать с клиента (peerId из query): он стабилен на вкладку,
+  // и по нему сервер опознаёт вернувшегося участника вместо создания дубля
+  constructor({ socket, id }) {
+    this.id = id ?? crypto.randomUUID();
     this.socket = socket;
     this.room = null;        // Room, ставится при join
     this.displayName = null; // ставится при join
@@ -21,6 +23,10 @@ class Peer {
   close() {
     if (this.closed) return;
     this.closed = true;
+    // joined/room сбрасываем: после close обработчики сокета и signaling
+    // не должны ни чистить этого пира повторно, ни принимать его запросы
+    this.joined = false;
+    this.room = null;
     // закрытие транспорта закрывает и все producers/consumers на нём
     for (const transport of this.transports.values()) transport.close();
     this.transports.clear();

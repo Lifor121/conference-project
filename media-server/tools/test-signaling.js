@@ -79,8 +79,9 @@ const expectFail = async (label, promise) => {
   const joined = await client.request('join', { displayName: 'Test Bot' });
   ok('join', `codecs: ${joined.rtpCapabilities.codecs.map((c) => c.mimeType).join(', ')}`);
 
-  console.log('3. повторный join');
-  await expectFail('duplicate join', client.request('join', { displayName: 'Test Bot' }));
+  console.log('3. повторный join на том же соединении — идемпотентен (ретрай)');
+  const again = await client.request('join', { displayName: 'Test Bot' });
+  ok('duplicate join', `участников в ответе: ${again.peers.length}`);
 
   console.log('4. транспорты');
   const send = await client.request('createWebRtcTransport', { direction: 'send' });

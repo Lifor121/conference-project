@@ -53,6 +53,18 @@ class Room {
     return null;
   }
 
+  // участник вернулся с новым соединением (переключение сети, перезагрузка
+  // вкладки): убираем его старую сессию, уведомив остальных, и рвём старый
+  // сокет кодом 4000 ("replaced") — чтобы вкладки не воевали за комнату
+  replaceSameIdPeer(peer) {
+    const existing = this.peers.get(peer.id);
+    if (!existing || existing === peer) return false;
+    console.log(`[room ${this.id}] peer ${peer.displayName ?? peer.id.slice(0, 8)} переподключился — заменяем старую сессию`);
+    this.removePeer(peer.id);
+    existing.socket.close(4000, 'replaced');
+    return true;
+  }
+
   removePeer(peerId) {
     const peer = this.peers.get(peerId);
     if (!peer) return;

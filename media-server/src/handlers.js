@@ -39,24 +39,42 @@ function turnIceServers() {
 // join
 
 async function join(peer, roomId, data) {
-  if (peer.joined) throw new Error('Already joined');
-
   const displayName = typeof data.displayName === 'string' ? data.displayName.trim() : '';
   if (!displayName || displayName.length > 64) throw new Error('Invalid displayName');
+
+  // повторный join на том же соединении — идемпотентный ретрай:
+  // клиент мог упасть посреди подключения (сеть мигнула) и начать заново
+  if (peer.joined) {
+    return {
+      rtpCapabilities: peer.room.rtpCapabilities,
+      peers: [...peer.room.peers.values()].filter((p) => p.id !== peer.id).map(peerInfo),
+      iceServers: turnIceServers(),
+    };
+  }
 
   // 1) комната существует и открыта? — решает backend
   await validateRoomForJoin(roomId);
 
   // 2) поднимаем Room в этом процессе (роутер создаётся при первом участнике)
   const room = await getOrCreateRoom(roomId, workerPool);
-  if (room.isFull()) throw new Error('Room is full');
 
-  // 3) входим
+  // 3) этот участник уже в комнате со старым (умершим) соединением?
+  //    Заменяем: остальные получат peerClosed + newPeer, старый сокет — close 4000
+  room.replaceSameIdPeer(peer);
+
+  // 4) лимит проверяем после takeover — призрак не должен занимать место
+  if (room.isFull()) {
+    const err = new Error('Room is full');
+    err.code = 'room_full';
+    throw err;
+  }
+
+  // 5) входим
   peer.displayName = displayName;
   peer.joined = true;
   room.addPeer(peer);
 
-  // 4) сообщаем остальным и отдаём новичку список участников
+  // 6) сообщаем остальным и отдаём новичку список участников
   for (const other of room.peers.values()) {
     if (other.id !== peer.id) {
       other.send('newPeer', { peerId: peer.id, displayName });
