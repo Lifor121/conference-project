@@ -11,6 +11,23 @@ const ERROR_TEXT = {
 const JOIN_RETRY_BASE_MS = 1000
 const JOIN_RETRY_MAX_MS = 8000
 
+// produce() висит, пока не завершится ICE/DTLS — при мёртвой сети это
+// «навсегда», и весь авто-реконнект бы встал. Даём щедрый, но конечный срок
+const PRODUCE_TIMEOUT_MS = 15000
+
+function withTimeout(promise, ms, label) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error(`${label}: превышено время ожидания (${ms / 1000}с)`)),
+      ms,
+    )
+    promise.then(
+      (value) => { clearTimeout(timer); resolve(value) },
+      (err) => { clearTimeout(timer); reject(err) },
+    )
+  })
+}
+
 // Стабильный id вкладки: хранится в sessionStorage, переживёт перезагрузку
 // страницы и переключение сети. Сервер по нему опознаёт вернувшегося
 // участника и заменяет старую сессию вместо создания дубля.
@@ -38,6 +55,8 @@ function getStablePeerId() {
 // remotePeers: [{ id, displayName, tracks: { 'webcam:audio' | 'webcam:video' | 'screen:video': MediaStreamTrack } }]
 export function useRoom({ session }) {
   const [phase, setPhase] = useState('connecting') // connecting | joined | reconnecting | error
+  const phaseRef = useRef('connecting')
+  const setPhaseSafe = (p) => { phaseRef.current = p; setPhase(p) }
   const [error, setError] = useState(null)
   const [remotePeers, setRemotePeers] = useState([])
 
@@ -106,7 +125,11 @@ export function useRoom({ session }) {
         const track = stream.getAudioTracks()[0]
         if (!track) throw new Error('Микрофон не найден')
         try {
-          const p = await refs.sendTransport.produce({ track, appData: { source: 'webcam' } })
+          const p = await withTimeout(
+            refs.sendTransport.produce({ track, appData: { source: 'webcam' } }),
+            PRODUCE_TIMEOUT_MS,
+            'публикация аудио',
+          )
           watchProducer(p, 'webcam:audio')
           refs.extraLocalTracks.add(track)
           refs.activeTracks.audio = track
@@ -143,7 +166,11 @@ export function useRoom({ session }) {
         const track = stream.getVideoTracks()[0]
         if (!track) throw new Error('Камера не найдена')
         try {
-          const p = await refs.sendTransport.produce({ track, appData: { source: 'webcam' } })
+          const p = await withTimeout(
+            refs.sendTransport.produce({ track, appData: { source: 'webcam' } }),
+            PRODUCE_TIMEOUT_MS,
+            'публикация видео',
+          )
           watchProducer(p, 'webcam:video')
           refs.extraLocalTracks.add(track)
           refs.activeTracks.video = track
@@ -235,6 +262,7 @@ export function useRoom({ session }) {
               .catch(errback)
           })
           refs.recvTransport = transport
+          watchTransport(transport, 'recv')
           return transport
         })()
         refs.recvTransportPromise.catch(() => {
@@ -290,6 +318,82 @@ export function useRoom({ session }) {
       })
     }
 
+    // --- восстановление медиа без выхода из комнаты ---
+
+    // Полный re-join по живому signaling-соединению: join идемпотентен,
+    // транспорты пересоздаются (сервер сам закрывает старые того же
+    // направления), consumers будут получены заново. Троттлим, чтобы
+    // серверные mediaStalled и клиентские ICE-фэйлы не устроили шторм
+    let lastFullRecoveryAt = 0
+    function scheduleFullRecovery(reason) {
+      if (disposed) return
+      const now = Date.now()
+      if (now - lastFullRecoveryAt < 10000) return
+      lastFullRecoveryAt = now
+      console.warn('[room] восстановление полным re-join:', reason)
+      runJoin()
+    }
+
+    // Транспорт отвалился (смена сети на телефоне — классика): сперва
+    // пробуем ICE restart — дёшево, тот же транспорт, у остальных участников
+    // ничего не мигает. Не помогло — полный re-join
+    function watchTransport(transport, label) {
+      if (typeof transport.restartIce !== 'function') return // старый mediasoup-client
+      let recoverTimer = 0
+      let recovering = false
+
+      async function recover() {
+        if (recovering || transport.closed) return
+        recovering = true
+        try {
+          console.warn(`[transport ${label}] связь потеряна — ICE restart`)
+          const { iceParameters } = await refs.signaling.request('restartIce', {
+            transportId: transport.id,
+          })
+          if (transport.closed) return
+          await transport.restartIce({ iceParameters })
+          // ждём восстановления связи; не дождались — re-join
+          const healed = await new Promise((resolve) => {
+            const isHealthy = (state = transport.connectionState) =>
+              state === 'connected' || state === 'completed'
+            if (isHealthy()) { resolve(true); return }
+            const done = (v) => {
+              clearTimeout(timer)
+              transport.off('connectionstatechange', onChange)
+              resolve(v)
+            }
+            const timer = setTimeout(() => done(false), 10000)
+            function onChange(state) { if (isHealthy(state)) done(true) }
+            transport.on('connectionstatechange', onChange)
+          })
+          if (!transport.closed && !healed) {
+            scheduleFullRecovery(`транспорт ${label} не ожил после ICE restart`)
+          }
+        } catch (e) {
+          if (!transport.closed) {
+            scheduleFullRecovery(`ICE restart транспорта ${label} не удался: ${e.message}`)
+          }
+        } finally {
+          recovering = false
+        }
+      }
+
+      transport.on('connectionstatechange', (state) => {
+        if (transport.closed) return
+        if (state === 'connected' || state === 'completed') {
+          clearTimeout(recoverTimer)
+          recoverTimer = 0
+        } else if (state === 'failed') {
+          clearTimeout(recoverTimer)
+          recoverTimer = 0
+          recover()
+        } else if (state === 'disconnected' && !recoverTimer && !recovering) {
+          // короткие сбои случаются и без смены сети — даём 5с на самооздоровление
+          recoverTimer = setTimeout(() => { recoverTimer = 0; recover() }, 5000)
+        }
+      })
+    }
+
     // кто-то замьютился / включил камеру — обновляем треки в UI
     function setProducerPaused({ producerId }, paused) {
       for (const entry of refs.consumers.values()) {
@@ -335,6 +439,11 @@ export function useRoom({ session }) {
           break
         case 'consumerClosed':
           removeConsumerTrack(data.consumerId)
+          break
+        case 'mediaStalled':
+          // сервер не получает наше медиа (сеть сменилась под нами),
+          // а signaling жив — пересобираем транспорты, не выходя из комнаты
+          scheduleFullRecovery('сервер не получает наше медиа')
           break
       }
     }
@@ -394,6 +503,7 @@ export function useRoom({ session }) {
           .catch(errback)
       })
       refs.sendTransport = sendTransport
+      watchTransport(sendTransport, 'send')
 
       // 5) публикация локальных дорожек (живые треки переживают обрыв сети)
       const publishes = []
@@ -402,15 +512,21 @@ export function useRoom({ session }) {
       if (audioTrack) {
         audioTrack.enabled = audioEnabledRef.current
         publishes.push(
-          sendTransport.produce({ track: audioTrack, appData: { source: 'webcam' } })
-            .then((p) => watchProducer(p, 'webcam:audio')),
+          withTimeout(
+            sendTransport.produce({ track: audioTrack, appData: { source: 'webcam' } }),
+            PRODUCE_TIMEOUT_MS,
+            'публикация аудио',
+          ).then((p) => watchProducer(p, 'webcam:audio')),
         )
       }
       if (videoTrack) {
         videoTrack.enabled = videoEnabledRef.current
         publishes.push(
-          sendTransport.produce({ track: videoTrack, appData: { source: 'webcam' } })
-            .then((p) => watchProducer(p, 'webcam:video')),
+          withTimeout(
+            sendTransport.produce({ track: videoTrack, appData: { source: 'webcam' } }),
+            PRODUCE_TIMEOUT_MS,
+            'публикация видео',
+          ).then((p) => watchProducer(p, 'webcam:video')),
         )
       }
       await Promise.all(publishes)
@@ -431,7 +547,7 @@ export function useRoom({ session }) {
       await Promise.all(pauses)
 
       joinAttempt = 0
-      setPhase('joined')
+      setPhaseSafe('joined')
 
       // 6) потоки тех, кто уже в комнате
       for (const peer of joined.peers) {
@@ -450,6 +566,9 @@ export function useRoom({ session }) {
       const seq = ++joinSeq
       clearTimeout(joinRetryTimer)
       if (refs.signaling?.terminal) return
+      // восстановление на живом соединении (mediaStalled, ICE restart) —
+      // показываем оверлей, чтобы пользователь видел, что что-то происходит
+      if (phaseRef.current === 'joined') setPhaseSafe('reconnecting')
       try {
         await joinAndPublish(seq)
       } catch (e) {
@@ -457,7 +576,7 @@ export function useRoom({ session }) {
         if (e.code && ERROR_TEXT[e.code]) {
           // комната исчезла/закрыта/переполнена — ретраями не лечится
           refs.signaling?.close()
-          setPhase('error')
+          setPhaseSafe('error')
           setError(ERROR_TEXT[e.code])
           return
         }
@@ -483,11 +602,11 @@ export function useRoom({ session }) {
       },
       onStatusChange: (status) => {
         if (disposed) return
-        if (status === 'reconnecting') setPhase('reconnecting')
+        if (status === 'reconnecting') setPhaseSafe('reconnecting')
       },
       onReplaced: () => {
         if (disposed) return
-        setPhase('error')
+        setPhaseSafe('error')
         setError('Встреча открыта в другой вкладке — подключение перенесено туда')
       },
     })
