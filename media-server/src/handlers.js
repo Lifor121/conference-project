@@ -150,6 +150,19 @@ async function connectWebRtcTransport(peer, _roomId, data) {
   return {};
 }
 
+// ICE restart: клиент заметил, что транспорт отвалился (смена сети на
+// телефоне — классика), и хочет поднять ICE заново на новых кандидатах,
+// не пересоздавая транспорт. Возвращаем свежие iceParameters — их клиент
+// передаёт в transport.restartIce() на своей стороне
+async function restartIce(peer, _roomId, data) {
+  assertJoined(peer);
+  const transport = peer.transports.get(data.transportId);
+  if (!transport) throw new Error('Transport not found');
+  await transport.restartIce();
+  console.log(`[transport ${transport.appData.direction} ${transport.id.slice(0, 8)}] ICE restart по запросу клиента`);
+  return { iceParameters: transport.iceParameters };
+}
+
 //  публикация и приём потоков
 
 function notifyProducerClosed(peer, producer) {
@@ -294,6 +307,7 @@ const handlers = {
   join,
   createWebRtcTransport,
   connectWebRtcTransport,
+  restartIce,
   produce,
   consume,
   resumeConsumer,
