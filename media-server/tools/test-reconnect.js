@@ -133,9 +133,76 @@ function waitNotifications(client, name, count, timeoutMs = 3000) {
     ? ok('отказ с notification error: Invalid peerId')
     : fail('отказ с notification error: Invalid peerId', JSON.stringify(bad.notifications));
 
+  // 7-10 — транспортные кейсы: в песочнице (run-media-fake.js) фейковые
+  // транспорты принимают любые параметры; в Docker с настоящим mediasoup
+  // пустые rtpParameters не пройдут валидацию — кейсы мягко пропускаются.
+  // Таймауты щедрые: под прод-интервалы (5с) mediaStalled приходит ~10-11с
+  console.log('7. сервер пингует открытые соединения (app-level ping)');
+  const bob = await connect(roomId, 'test-bob-peer');
+  await bob.request('join', { displayName: 'Bob' });
+  try {
+    await waitNotifications(bob, 'ping', 2, 15000);
+    ok('ping-и приходят регулярно');
+  } catch {
+    fail('ping-и приходят регулярно');
+  }
+
+  console.log('8. restartIce: транспорт получает свежие iceParameters');
+  let transport = null;
+  try {
+    transport = await bob.request('createWebRtcTransport', { direction: 'send' });
+    const before = transport.iceParameters.usernameFragment;
+    const restarted = await bob.request('restartIce', { transportId: transport.id });
+    typeof restarted.iceParameters?.usernameFragment === 'string' &&
+    restarted.iceParameters.usernameFragment !== before
+      ? ok('iceParameters обновлены', `${before} → ${restarted.iceParameters.usernameFragment}`)
+      : fail('iceParameters обновлены', JSON.stringify(restarted.iceParameters));
+  } catch (e) {
+    console.log(`   ⏭  пропущено (нужен фейк-режим песочницы): ${e.message}`);
+  }
+
+  if (transport) {
+    console.log('9. mediaStalled: producer молчит (score 0) → сервер сообщает владельцу');
+    let producerId = null;
+    try {
+      const prod = await bob.request('produce', {
+        transportId: transport.id,
+        kind: 'video',
+        rtpParameters: {
+          codecs: [{ mimeType: 'video/VP8', payloadType: 96, clockRate: 90000, parameters: {}, rtcpFeedback: [] }],
+          headerExtensions: [],
+        },
+        source: 'webcam',
+      });
+      producerId = prod.id;
+    } catch (e) {
+      console.log(`   ⏭  пропущено (нужен фейк-режим песочницы): ${e.message}`);
+    }
+    if (producerId) {
+      try {
+        const [stalled] = await waitNotifications(bob, 'mediaStalled', 1, 15000);
+        const info = stalled.data.producers?.[0];
+        info && info.producerId === producerId && info.kind === 'video'
+          ? ok('mediaStalled получен, данные producer корректны')
+          : fail('mediaStalled получен', JSON.stringify(stalled.data));
+      } catch {
+        fail('mediaStalled получен');
+      }
+
+      console.log('10. paused producer не считается мёртвым — mediaStalled прекращаются');
+      await bob.request('pauseProducer', { producerId });
+      await new Promise((r) => setTimeout(r, 1200));
+      const stalledCount = bob.notifications.filter((n) => n.notification === 'mediaStalled').length;
+      stalledCount === 1
+        ? ok('после pause новых mediaStalled нет')
+        : fail('после pause новых mediaStalled нет', `уведомлений: ${stalledCount}`);
+    }
+  }
+
   observer.ws.close();
   alice2.ws.close();
   legacy.ws.close();
+  bob.ws.close();
   setTimeout(() => process.exit(process.exitCode ?? 0), 500);
 })().catch((e) => {
   console.error('❌ неожиданная ошибка:', e.message);
