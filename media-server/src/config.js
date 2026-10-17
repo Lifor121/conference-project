@@ -7,6 +7,16 @@ module.exports = {
     maxPeersPerRoom: parseInt(process.env.MAX_PEERS_PER_ROOM || '50', 10),
     // пустая комната живёт ещё 15с
     roomCloseDelayMs: parseInt(process.env.ROOM_CLOSE_DELAY_MS || '15000', 10),
+
+    // app-level ping: браузерный WebSocket не отдаёт protocol-ping'и наверх,
+    // поэтому сервер дублирует их видимым сообщением — по его тишине клиент
+    // понимает, что соединение мертво (half-open TCP), и не ждёт onclose
+    pingIntervalMs: parseInt(process.env.SIGNALING_PING_INTERVAL_MS || '5000', 10),
+
+    // здоровье медиа: как часто опрашивать score producers и после скольких
+    // «мёртвых» тиков подряд (интервалов) слать участнику mediaStalled
+    mediaHealthIntervalMs: parseInt(process.env.MEDIA_HEALTH_INTERVAL_MS || '5000', 10),
+    mediaStalledTicks: parseInt(process.env.MEDIA_STALLED_TICKS || '2', 10),
   },
 
   mediasoup: {

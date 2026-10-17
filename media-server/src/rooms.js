@@ -21,4 +21,9 @@ function roomStats() {
   return [...rooms.values()].map((r) => ({ id: r.id, peers: r.peers.size }));
 }
 
-module.exports = { getOrCreateRoom, roomStats };
+// опрос здоровья медиа во всех комнатах (интервал поднимается в index.js)
+function checkAllRoomsMediaHealth() {
+  for (const room of rooms.values()) room.checkMediaHealth();
+}
+
+module.exports = { getOrCreateRoom, roomStats, checkAllRoomsMediaHealth };

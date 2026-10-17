@@ -13,6 +13,9 @@ class Peer {
     this.producers = new Map();  // producerId  -> Producer
     this.consumers = new Map();  // consumerId  -> Consumer
     this.closed = false;
+    // сколько проверок здоровья подряд все активные producers молчали
+    // (score 0 = RTP от участника не приходит) — см. Room.checkMediaHealth
+    this.mediaStalledTicks = 0;
   }
 
   send(notification, data) {

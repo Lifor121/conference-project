@@ -3,7 +3,7 @@ const http = require('node:http');
 const { WebSocketServer } = require('ws');
 const config = require('./config');
 const { workerPool } = require('./workers');
-const { roomStats } = require('./rooms');
+const { roomStats, checkAllRoomsMediaHealth } = require('./rooms');
 const { Peer } = require('./Peer');
 const { handlers } = require('./handlers');
 
@@ -36,7 +36,25 @@ const heartbeat = setInterval(() => {
   }
 }, HEARTBEAT_MS);
 
-wss.on('close', () => clearInterval(heartbeat));
+// app-level ping: protocol-ping из heartbeat браузер видит, но не отдаёт
+// странице — поэтому дублируем его обычным сообщением. Если клиент не видит
+// ping'и N интервалов подряд, соединение half-open и его надо пересоздавать
+const appPing = setInterval(() => {
+  for (const client of wss.clients) {
+    if (client.readyState === client.OPEN) {
+      client.send(JSON.stringify({ notification: 'ping', data: {} }));
+    }
+  }
+}, config.app.pingIntervalMs);
+
+// здоровье медиа: score producers всех комнат → mediaStalled «замолчавшим»
+const mediaHealth = setInterval(checkAllRoomsMediaHealth, config.app.mediaHealthIntervalMs);
+
+wss.on('close', () => {
+  clearInterval(heartbeat);
+  clearInterval(appPing);
+  clearInterval(mediaHealth);
+});
 
 wss.on('connection', (socket, req) => {
   socket.isAlive = true;

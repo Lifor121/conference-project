@@ -65,6 +65,49 @@ class Room {
     return true;
   }
 
+  // Здоровье исходящего медиа участника. Вызывается интервалом из rooms.js.
+  //
+  // Сценарий: телефон переключил сеть — signaling-сокет выжил (или уже
+  // восстановился), а старый send-транспорт умер: ICE consent истёк,
+  // RTP больше не приходит, у остальных — замороженный кадр. Сам клиент
+  // этого может не замечать. Сервер видит score=0 у всех активных
+  // producers — сообщаем участнику mediaStalled, чтобы тот пересоздал
+  // транспорты (или сделал ICE restart), не покидая комнату.
+  checkMediaHealth() {
+    if (this.closed) return;
+    for (const peer of this.peers.values()) {
+      if (!peer.joined || peer.closed) continue;
+
+      // paused producers не шлют RTP по своей воле — не считаем их мёртвыми
+      const active = [...peer.producers.values()].filter((p) => !p.paused && !p.closed);
+      if (active.length === 0) {
+        peer.mediaStalledTicks = 0;
+        continue;
+      }
+
+      // score: [{ ssrc, score }]; 0 или пустой список — входящего RTP нет.
+      // Достаточно одного живого producer, чтобы участник считался здоровым
+      const anyAlive = active.some((p) => (p.score ?? []).some((s) => s.score > 0));
+      if (anyAlive) {
+        peer.mediaStalledTicks = 0;
+        continue;
+      }
+
+      peer.mediaStalledTicks += 1;
+      if (peer.mediaStalledTicks >= config.app.mediaStalledTicks) {
+        // сбрасываем: следующая порция уведомлений — не раньше, чем через
+        // ещё mediaStalledTicks интервалов (защита от спама)
+        peer.mediaStalledTicks = 0;
+        console.warn(
+          `[room ${this.id}] у ${peer.displayName} не приходит исходящее медиа — mediaStalled`,
+        );
+        peer.send('mediaStalled', {
+          producers: active.map((p) => ({ producerId: p.id, kind: p.kind, source: p.appData.source })),
+        });
+      }
+    }
+  }
+
   removePeer(peerId) {
     const peer = this.peers.get(peerId);
     if (!peer) return;
