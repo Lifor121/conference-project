@@ -85,7 +85,8 @@ export default function RoomView({ session, onLeave }) {
     <main className="room">
       <header className="room-header">
         <span className="muted">
-          Комната {session.roomId.slice(0, 8)}… · {joined ? 'в эфире' : 'подключение…'}
+          Комната {session.roomId.slice(0, 8)}… ·{' '}
+          {joined ? 'в эфире' : phase === 'reconnecting' ? 'переподключение…' : 'подключение…'}
         </span>
       </header>
 
@@ -106,6 +107,13 @@ export default function RoomView({ session, onLeave }) {
         <div className="connecting-overlay">
           <div className="spinner" />
           Подключение к комнате…
+        </div>
+      )}
+
+      {phase === 'reconnecting' && (
+        <div className="connecting-overlay reconnecting">
+          <div className="spinner" />
+          Связь с сервером потеряна. Переподключаемся…
         </div>
       )}
 
