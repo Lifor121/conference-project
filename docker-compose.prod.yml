@@ -38,9 +38,6 @@ services:
       - --max-port=49200
       - --fingerprint
       - --no-multicast-peers
-      - --no-cli
-      - --no-tlsv1
-      - --no-tlsv1_1
       - --log-file=stdout
 
   db:
