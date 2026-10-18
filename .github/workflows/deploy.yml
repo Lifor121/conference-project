@@ -53,6 +53,10 @@ jobs:
             echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u ${{ secrets.GHCR_USER }} --password-stdin
             docker compose -f docker-compose.prod.yml pull
             docker compose -f docker-compose.prod.yml up -d
+            # конфиг nginx примонтирован с хоста (bind mount): up -d не видит
+            # его изменения и не перезапускает сервис. Перезапускаем сами —
+            # nginx перечитает конфиг и заново резолвит апстримы
+            docker compose -f docker-compose.prod.yml restart nginx
             docker compose -f docker-compose.prod.yml exec -T backend alembic upgrade head
 
             echo "--- статус ---"
