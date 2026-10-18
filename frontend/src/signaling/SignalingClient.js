@@ -15,13 +15,30 @@
 //    при таком переключении может вообще не прийти — форсируем
 //    переподключение сразу;
 //  - offline: рвём сокет немедленно и не создаём новый, пока браузер
-//    считает сеть отсутствующей.
+//    считает сеть отсутствующей;
+//  - проба сети: в цикле переподключения раз в секунду стучимся лёгким
+//    HTTP-запросом на тот же origin. Сеть часто оживает БЕЗ события online
+//    (смена wifi <-> мобильный на Firefox/iOS, «недоготовность» новой сети
+//    после online) — тогда пришлось бы досиживать остаток backoff-таймера.
+//    Любой HTTP-ответ значит «до сервера проходим» — подключаемся сразу.
+//    Пока соединение «открыто», но молчит дольше fastSilenceMs, та же проба
+//    отличает «сеть пропала» (ждём) от «наш сокет мёртв» (чиним немедленно).
 //
 // Статусы (onStatusChange): 'connecting' | 'open' | 'reconnecting' | 'closed' | 'replaced'
 
 const RECONNECT_BASE_MS = 1000
 const RECONNECT_MAX_MS = 10000
 const CLOSE_CODE_REPLACED = 4000
+
+// проба сети: раз в секунду, пока ждём следующей попытки подключения;
+// любой HTTP-ответ (даже 4xx/5xx) — путь до сервера жив
+const NET_PROBE_INTERVAL_MS = 1000
+const NET_PROBE_TIMEOUT_MS = 2500
+// не срываем свежую попытку подключения ради пробы: между probe-запущенными
+// подключениями держим паузу (не чаще раза в 1.5с)
+const NET_PROBE_MIN_ATTEMPT_GAP_MS = 1500
+// повторять быструю пробу «тишины при живой сети» чаще бессмысленно
+const FAST_PROBE_RETRY_MS = 2000
 
 // классы сетей, между переходами которых старое TCP/TLS-соединение
 // почти наверняка мертво (и медиа-транспорты вместе с ним)
@@ -36,6 +53,8 @@ export class SignalingClient {
     roomId, peerId, onNotification, onOpen, onStatusChange, onReplaced,
     requestTimeoutMs = 10000,
     pingSilenceMs = 15000,
+    fastSilenceMs = 10000,
+    probeNetwork,
   }) {
     this.roomId = roomId
     this.peerId = peerId
@@ -45,6 +64,13 @@ export class SignalingClient {
     this.onReplaced = onReplaced
     this.requestTimeoutMs = requestTimeoutMs
     this.pingSilenceMs = pingSilenceMs
+    this.fastSilenceMs = fastSilenceMs
+    this._probeNetworkImpl = probeNetwork ?? this._defaultProbeNetwork.bind(this)
+
+    this.probeTimer = 0        // цикл проб сети в состоянии reconnecting
+    this._probeBusy = false    // параллельные пробы не нужны
+    this._fastProbeAt = 0      // троттлинг быстрой пробы тишины
+    this._lastConnectAt = 0    // чтобы проба не срывала свежий хендшейк
 
     this.nextId = 1
     this.pending = new Map()
@@ -96,6 +122,7 @@ export class SignalingClient {
   _setStatus(status) {
     if (this.status === status) return
     this.status = status
+    if (status !== 'reconnecting') this._stopProbeLoop()
     this.onStatusChange?.(status)
   }
 
@@ -118,6 +145,7 @@ export class SignalingClient {
     // раньше закрытия старого) — его ожидающие запросы должны упасть, а не висеть;
     // this.ws обнуляем: события умирающего сокета игнорируются как устаревшие
     this._teardown('Соединение перезапущено')
+    this._lastConnectAt = Date.now()
 
     // относительный путь: в dev проксирует Vite, в прод — nginx
     const proto = location.protocol === 'https:' ? 'wss' : 'ws'
@@ -218,7 +246,14 @@ export class SignalingClient {
   _checkSilence() {
     if (this.closedByUs || this.status === 'replaced' || !this.ws) return
     const silentFor = Date.now() - this._lastMessageAt
-    if (silentFor < this.pingSilenceMs) return
+    if (silentFor < this.pingSilenceMs) {
+      // тишина подозрительно долгая (fastSilenceMs), но до полного таймаута
+      // ещё далеко: HTTP-проба различает «сеть пропала» и «наш сокет мёртв»
+      if (this.status === 'open' && silentFor >= this.fastSilenceMs) {
+        this._probeFast()
+      }
+      return
+    }
 
     if (this.status === 'open') {
       // сервер обязан пинговать открытое соединение, но молчит: TCP жив
@@ -241,6 +276,82 @@ export class SignalingClient {
     this.attempt += 1
     const jitter = delay * (0.75 + Math.random() * 0.5)
     this.retryTimer = setTimeout(() => this._connect(), jitter)
+    // пока ждём — раз в секунду спрашиваем у сети «ты уже ожила?»;
+    // оживёт раньше таймера — подключимся не дожидаясь backoff
+    this._startProbeLoop()
+  }
+
+  // ---------- проба сети ----------
+
+  // лёгкий HTTP-запрос на тот же origin; важен сам факт ответа —
+  // 4xx/5xx тоже значит, что маршрут до сервера работает
+  async _defaultProbeNetwork() {
+    if (typeof fetch !== 'function') return false
+    const url = `${location.protocol}//${location.host}/?netprobe=${Date.now()}`
+    const ac = new AbortController()
+    const timer = setTimeout(() => ac.abort(), NET_PROBE_TIMEOUT_MS)
+    try {
+      await fetch(url, { cache: 'no-store', signal: ac.signal })
+      return true
+    } catch {
+      return false // сетевая ошибка/таймаут — сети нет (или она ещё не готова)
+    } finally {
+      clearTimeout(timer)
+    }
+  }
+
+  async _probeOnce() {
+    if (this._probeBusy) return false
+    this._probeBusy = true
+    try {
+      return Boolean(await this._probeNetworkImpl())
+    } catch {
+      return false
+    } finally {
+      this._probeBusy = false
+    }
+  }
+
+  _startProbeLoop() {
+    if (this.probeTimer || this.terminal) return
+    this.probeTimer = setInterval(() => { this._probeTick() }, NET_PROBE_INTERVAL_MS)
+  }
+
+  _stopProbeLoop() {
+    clearInterval(this.probeTimer)
+    this.probeTimer = 0
+  }
+
+  async _probeTick() {
+    // подключились (или терминальный статус) — проба больше не нужна
+    if (this.terminal || this.status !== 'reconnecting') {
+      this._stopProbeLoop()
+      return
+    }
+    if (!(await this._probeOnce())) return
+    // сеть ожила, пока мы досиживали backoff — подключаемся немедленно.
+    // Свежую попытку (ей меньше NET_PROBE_MIN_ATTEMPT_GAP_MS) не срываем:
+    // может, это как раз она и прорвётся
+    if (this.terminal || this.status !== 'reconnecting') return
+    if (Date.now() - this._lastConnectAt < NET_PROBE_MIN_ATTEMPT_GAP_MS) return
+    this.connectNow()
+  }
+
+  // «тишина при живой сети»: сокет выглядит открытым, но сервер молчит
+  // дольше fastSilenceMs (сервер пингует каждые 5с — столько молчать он
+  // не может). Если HTTP-проба проходит — сокет half-open, пересоздаём
+  // не дожидаясь полного watchdog-таймаута pingSilenceMs
+  _probeFast() {
+    const now = Date.now()
+    if (now - this._fastProbeAt < FAST_PROBE_RETRY_MS) return
+    this._fastProbeAt = now
+    this._probeOnce().then((up) => {
+      if (!up) return
+      if (this.terminal || this.status !== 'open') return
+      // за время пробы само ожило — не трогаем
+      if (Date.now() - this._lastMessageAt < this.fastSilenceMs) return
+      this.forceReconnect()
+    })
   }
 
   // внешняя команда «пробуй сейчас» (событие online)
@@ -284,6 +395,7 @@ export class SignalingClient {
     this.closedByUs = true
     clearInterval(this._watchdog)
     clearTimeout(this.retryTimer)
+    this._stopProbeLoop()
     window.removeEventListener('online', this._onOnline)
     window.removeEventListener('offline', this._onOffline)
     netConnection()?.removeEventListener?.('change', this._onNetChange)
