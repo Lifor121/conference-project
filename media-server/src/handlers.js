@@ -1,3 +1,5 @@
+const crypto = require('node:crypto');
+
 const config = require('./config');
 const { getOrCreateRoom } = require('./rooms');
 const { validateRoomForJoin } = require('./backend');
@@ -23,15 +25,23 @@ function assertJoined(peer) {
   if (!peer.joined) throw new Error('Not joined');
 }
 
-function turnIceServers() {
+// ICE-серверы клиента: STUN + TURN. coturn работает в режиме REST API
+// (--static-auth-secret): статические логин/пароль он НЕ принимает —
+// пароль должен быть HMAC от имени. Поэтому креды выпускаем на лету:
+// username = "expiry:peerId" (expiry — unix-секунды),
+// credential = base64(hmac-sha1(secret, username)) — так их ждёт coturn.
+// Секрет один и тот же у coturn (--static-auth-secret) и здесь.
+function turnIceServers(peer) {
   const servers = [];
   if (process.env.STUN_URL) servers.push({ urls: process.env.STUN_URL });
-  if (process.env.TURN_URL) {
-    servers.push({
-      urls: process.env.TURN_URL,
-      username: process.env.TURN_USERNAME || 'vc',
-      credential: process.env.TURN_CREDENTIAL || 'vc_dev_turn_secret_change_me',
-    });
+
+  const turnUrl = process.env.TURN_URL;
+  const secret = process.env.TURN_STATIC_AUTH_SECRET || process.env.TURN_CREDENTIAL;
+  if (turnUrl && secret) {
+    const expiry = Math.floor(Date.now() / 1000) + config.app.turnCredTtlSec;
+    const username = `${expiry}:${peer?.id ?? 'anonymous'}`;
+    const credential = crypto.createHmac('sha1', secret).update(username).digest('base64');
+    servers.push({ urls: turnUrl, username, credential });
   }
   return servers;
 }
@@ -48,7 +58,7 @@ async function join(peer, roomId, data) {
     return {
       rtpCapabilities: peer.room.rtpCapabilities,
       peers: [...peer.room.peers.values()].filter((p) => p.id !== peer.id).map(peerInfo),
-      iceServers: turnIceServers(),
+      iceServers: turnIceServers(peer),
     };
   }
 
@@ -84,7 +94,7 @@ async function join(peer, roomId, data) {
   return {
     rtpCapabilities: room.rtpCapabilities,
     peers: [...room.peers.values()].filter((p) => p.id !== peer.id).map(peerInfo),
-    iceServers: turnIceServers(),
+    iceServers: turnIceServers(peer),
   };
 }
 
