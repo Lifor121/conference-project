@@ -83,6 +83,9 @@ export function useRoom({ session }) {
     iceServers: [],
     producers: new Map(),       // 'webcam:audio' | 'webcam:video' -> Producer
     consumers: new Map(),       // consumerId -> { consumer, peerId, key }
+    // сколько раз подряд после обрыва восстанавливались «дёшево» (ICE restart
+    // выживших транспортов): если не помогает — пора в полную пересборку
+    resumeAttempts: 0,
     extraLocalTracks: new Set(), // треки, полученные уже внутри комнаты
     // живые локальные треки для (пере)публикации: getUserMedia не зависит
     // от сети, треки переживают обрыв и годятся для нового транспорта
@@ -381,6 +384,7 @@ export function useRoom({ session }) {
       transport.on('connectionstatechange', (state) => {
         if (transport.closed) return
         if (state === 'connected' || state === 'completed') {
+          refs.resumeAttempts = 0 // медиа пошло — ICE-рестарты сработали
           clearTimeout(recoverTimer)
           recoverTimer = 0
         } else if (state === 'failed') {
@@ -448,6 +452,41 @@ export function useRoom({ session }) {
       }
     }
 
+    // ресинк после восстановления: пока мы были оффлайн, состав участников
+    // и их producers менялся, а уведомления о событиях потерялись вместе с
+    // мёртвым сокетом. Живые тайлы не сбрасываем — убираем только то, чего
+    // больше нет, добавляем недостающее
+    function reconcilePeers(incoming) {
+      const liveProducers = new Map()
+      for (const p of incoming) {
+        for (const prod of p.producers ?? []) liveProducers.set(prod.producerId, prod)
+      }
+
+      // consumer'ы, чей producer исчез, пока нас не было
+      for (const [id, entry] of [...refs.consumers]) {
+        if (!liveProducers.has(entry.consumer.producerId)) removeConsumerTrack(id)
+      }
+
+      setRemotePeers((prev) => {
+        const byId = new Map(incoming.map((p) => [p.id, p]))
+        const kept = prev.filter((p) => byId.has(p.id))
+        const keptIds = new Set(kept.map((p) => p.id))
+        for (const p of incoming) {
+          if (!keptIds.has(p.id)) kept.push({ id: p.id, displayName: p.displayName, tracks: {} })
+        }
+        return kept
+      })
+
+      for (const prod of liveProducers.values()) {
+        requestConsume(prod.producerId)
+        // рассинк пауз (источник замьютился, пока мы были оффлайн)
+        const entry = [...refs.consumers.values()].find(
+          (c) => c.consumer.producerId === prod.producerId,
+        )
+        if (entry) setProducerPaused({ producerId: prod.producerId }, prod.paused)
+      }
+    }
+
     // Вход в комнату: join → Device → транспорты → публикация → приём.
     // Вызывается и при первом входе, и после каждого переподключения —
     // поэтому всё идемпотентно: старые транспорты/consumers закрываются,
@@ -457,6 +496,34 @@ export function useRoom({ session }) {
       const joined = await refs.signaling.request('join', { displayName: session.displayName })
       if (disposed || seq !== joinSeq) return
       refs.iceServers = joined.iceServers ?? []
+
+      // сервер узнал нас и сохранил сессию (обрыв signaling при смене сети,
+      // вернулись тем же peerId): НЕ пересобираем — оживляем ICE выживших
+      // транспортов и ресинкаем участников. Это в разы дешевле: без нового
+      // DTLS, без re-publish/re-consume, без мигания плиток у остальных
+      if (joined.resumed) {
+        const serverIds = new Set((joined.transports ?? []).map((t) => t.id))
+        const survivors = [refs.sendTransport, refs.recvTransport].filter(
+          (t) => t && !t.closed && serverIds.has(t.id) && typeof t.restartIce === 'function',
+        )
+        if (survivors.length && refs.resumeAttempts < 2) {
+          refs.resumeAttempts += 1
+          console.warn(`[room] resume: ICE restart ${survivors.length} выживших транспортов`)
+          await Promise.all(survivors.map(async (t) => {
+            const { iceParameters } = await refs.signaling.request('restartIce', { transportId: t.id })
+            if (disposed || seq !== joinSeq || t.closed) return
+            await t.restartIce({ iceParameters })
+          }))
+          if (disposed || seq !== joinSeq) return
+          reconcilePeers(joined.peers)
+          joinAttempt = 0
+          setPhaseSafe('joined')
+          return
+        }
+        // выживших нет (перезагрузка вкладки) либо дешёвые рестарты не
+        // помогают — полная пересборка ниже
+      }
+
       setRemotePeers(
         joined.peers.map((p) => ({ id: p.id, displayName: p.displayName, tracks: {} })),
       )
@@ -547,6 +614,7 @@ export function useRoom({ session }) {
       await Promise.all(pauses)
 
       joinAttempt = 0
+      refs.resumeAttempts = 0
       setPhaseSafe('joined')
 
       // 6) потоки тех, кто уже в комнате

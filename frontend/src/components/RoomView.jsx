@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRoom } from '../room/useRoom.js'
 import { LeaveIcon, MicIcon, MicOffIcon, VideoIcon, VideoOffIcon } from './icons.jsx'
 
@@ -70,6 +70,19 @@ export default function RoomView({ session, onLeave }) {
 
   const joined = phase === 'joined'
 
+  // оверлей не должен мигать на коротких восстановлениях: смена сети теперь
+  // лечится resume + ICE-рестарт за 1–2с — показываем его, только если
+  // восстановление реально затянулось
+  const [showReconnectOverlay, setShowReconnectOverlay] = useState(false)
+  useEffect(() => {
+    if (phase !== 'reconnecting') {
+      setShowReconnectOverlay(false)
+      return
+    }
+    const timer = setTimeout(() => setShowReconnectOverlay(true), 1200)
+    return () => clearTimeout(timer)
+  }, [phase])
+
   if (phase === 'error') {
     return (
       <main className="room">
@@ -110,7 +123,7 @@ export default function RoomView({ session, onLeave }) {
         </div>
       )}
 
-      {phase === 'reconnecting' && (
+      {showReconnectOverlay && (
         <div className="connecting-overlay reconnecting">
           <div className="spinner" />
           Связь с сервером потеряна. Переподключаемся…

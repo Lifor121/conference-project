@@ -11,9 +11,10 @@
 //    секунд; если сообщений нет дольше pingSilenceMs — соединение
 //    half-open, пересоздаём его, не дожидаясь onclose (его может не быть);
 //  - смена типа сети (wifi <-> мобильный интернет): navigator.connection
-//    в Chrome/Android даёт событие мгновенно, тогда как offline/online
-//    при таком переключении может вообще не прийти — форсируем
-//    переподключение сразу;
+//    даёт событие мгновенно (type — на Android/ChromeOS, effectiveType —
+//    и на десктопе), тогда как offline/online при таком переключении может
+//    вообще не прийти — форсируем переподключение сразу. Ложная тревога
+//    дёшева: сервер узнаёт вернувшегося peerId и возобновляет сессию;
 //  - offline: рвём сокет немедленно и не создаём новый, пока браузер
 //    считает сеть отсутствующей;
 //  - проба сети: в цикле переподключения раз в секунду стучимся лёгким
@@ -53,7 +54,10 @@ export class SignalingClient {
     roomId, peerId, onNotification, onOpen, onStatusChange, onReplaced,
     requestTimeoutMs = 10000,
     pingSilenceMs = 15000,
-    fastSilenceMs = 10000,
+    // сервер пингует каждые 5с: 7с тишины = пропущен один пинг с запасом.
+    // Дальше решает HTTP-проба: сеть жива — сокет half-open, чиним; мертва
+    // — ждём полного watchdog-порога pingSilenceMs
+    fastSilenceMs = 7000,
     probeNetwork,
   }) {
     this.roomId = roomId
@@ -96,15 +100,25 @@ export class SignalingClient {
     window.addEventListener('online', this._onOnline)
 
     // wifi <-> мобильный интернет без полной потери сети: offline/online
-    // может не прийти, а старое соединение уже мертво — начинаем заново
+    // может не прийти, а старое соединение уже мертво — начинаем заново.
+    // type есть только на Android/ChromeOS, поэтому дополнительно следим за
+    // effectiveType (грубый класс сети, доступен и на десктопе): при переходе
+    // wifi <-> cellular он почти наверняка меняется
     const conn = netConnection()
     this._netType = conn?.type ?? null
+    this._netEffType = conn?.effectiveType ?? null
     this._onNetChange = () => {
-      const type = netConnection()?.type ?? null
-      const prev = this._netType
+      const c = netConnection()
+      const type = c?.type ?? null
+      const effType = c?.effectiveType ?? null
+      const prevType = this._netType
+      const prevEffType = this._netEffType
       this._netType = type
+      this._netEffType = effType
       if (this.closedByUs || this.status === 'replaced') return
-      if (NET_TYPES.has(prev) && NET_TYPES.has(type) && prev !== type) {
+      const typeSwitched = NET_TYPES.has(prevType) && NET_TYPES.has(type) && prevType !== type
+      const effTypeSwitched = Boolean(prevEffType && effType && prevEffType !== effType)
+      if (typeSwitched || effTypeSwitched) {
         this.forceReconnect()
       }
     }

@@ -1,11 +1,12 @@
-// Тест переподключения (takeover) без браузера: «телефон переключил сеть».
+// Тест переподключения (resume) без браузера: «телефон переключил сеть».
 // Запуск: docker compose exec media node tools/test-reconnect.js <roomId>
 // (комнату создать заранее — см. test-signaling.js)
 //
-// Сценарий: Alice входит → её соединение «умирает» (на самом деле живо,
-// но сервер об этом не знает) → Alice входит с нового сокета с тем же peerId.
-// Ожидаем: старый сокет закрыт кодом 4000, наблюдатель получил peerClosed
-// и newPeer с тем же peerId, дубля участника нет.
+// Сценарий: Alice входит → её соединение «умирает» (на самом деле сокет
+// жив, но сервер об этом не знает — так выглядит смена сети) → Alice входит
+// с нового сокета с тем же peerId. Ожидаем: сессия ПЕРЕЖИЛА обрыв —
+// старый сокет закрыт кодом 4000, в ответе resumed: true, а наблюдатель
+// НЕ получил ни peerClosed, ни нового newPeer (участник не «исчезал»).
 
 const { WebSocket } = require('ws');
 
@@ -97,34 +98,41 @@ function waitNotifications(client, name, count, timeoutMs = 3000) {
   const newPeersOnly1 = (await waitNotifications(observer, 'newPeer', 1)).length === 1;
   newPeersOnly1 ? ok('дубль newPeer не разослан') : fail('дубль newPeer не разослан');
 
-  console.log('4. Alice «переподключилась»: новый сокет, тот же peerId (takeover)');
+  console.log('4. Alice «переподключилась»: новый сокет, тот же peerId (resume)');
   const alice2 = await connect(roomId, 'test-alice-peer');
   const joinedB = await alice2.request('join', { displayName: 'Alice' });
-  ok('join новой сессии Alice', `других участников в ответе: ${joinedB.peers.length}`);
+  joinedB.resumed === true
+    ? ok('сессия возобновлена (resumed: true)', `сохранённых транспортов: ${(joinedB.transports ?? []).length}`)
+    : fail('сессия возобновлена (resumed: true)', JSON.stringify({ resumed: joinedB.resumed }));
 
   const closeInfo = await alice.closed;
   closeInfo.code === 4000
     ? ok('старый сокет закрыт кодом 4000', `reason="${closeInfo.reason}"`)
     : fail('старый сокет закрыт кодом 4000', `код ${closeInfo.code}, reason="${closeInfo.reason}"`);
 
-  const [peerClosed] = await waitNotifications(observer, 'peerClosed', 1);
-  peerClosed.data.peerId === 'test-alice-peer'
-    ? ok('наблюдатель получил peerClosed старой сессии')
-    : fail('peerClosed старой сессии', JSON.stringify(peerClosed.data));
-
-  const newPeers = await waitNotifications(observer, 'newPeer', 2);
-  const newPeer2 = newPeers[1];
-  newPeer2.data.peerId === 'test-alice-peer' && newPeer2.data.displayName === 'Alice'
-    ? ok('наблюдатель получил newPeer той же Alice (без дубля участника)')
-    : fail('newPeer той же Alice', JSON.stringify(newPeer2.data));
+  // сессия пережила обрыв: наблюдатель не должен увидеть ни peerClosed,
+  // ни повторного newPeer — участник никуда не исчезал. Легитимный newPeer
+  // из шага 2 уже в списке, сверх него ничего быть не должно
+  await new Promise((r) => setTimeout(r, 1500));
+  const aliceChurn = observer.notifications.filter(
+    (n) =>
+      (n.notification === 'peerClosed' || n.notification === 'newPeer') &&
+      n.data.peerId === 'test-alice-peer',
+  );
+  const extraChurn = aliceChurn.slice(1);
+  extraChurn.length === 0
+    ? ok('без peerClosed/newPeer — участник не мигал у остальных')
+    : fail('без peerClosed/newPeer при resume', JSON.stringify(extraChurn));
 
   console.log('5. клиент без peerId (старая версия клиента) — работает');
   const legacy = await connect(roomId);
   await legacy.request('join', { displayName: 'Legacy' });
-  const newPeers3 = await waitNotifications(observer, 'newPeer', 3);
-  /^[0-9a-f-]{36}$/.test(newPeers3[2].data.peerId)
-    ? ok('сервер сгенерировал peerId сам', newPeers3[2].data.peerId)
-    : fail('сервер сгенерировал peerId сам', newPeers3[2].data.peerId);
+  // newPeer теперь два: Alice (шаг 2) и Legacy — возвращение Alice (шаг 4)
+  // больше не рассылает newPeer
+  const newPeers3 = await waitNotifications(observer, 'newPeer', 2);
+  /^[0-9a-f-]{36}$/.test(newPeers3[1].data.peerId)
+    ? ok('сервер сгенерировал peerId сам', newPeers3[1].data.peerId)
+    : fail('сервер сгенерировал peerId сам', newPeers3[1].data.peerId);
 
   console.log('6. битый peerId в query — отказ');
   const bad = await connect(roomId, 'x');

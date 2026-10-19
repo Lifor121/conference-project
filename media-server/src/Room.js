@@ -53,16 +53,79 @@ class Room {
     return null;
   }
 
-  // участник вернулся с новым соединением (переключение сети, перезагрузка
-  // вкладки): убираем его старую сессию, уведомив остальных, и рвём старый
-  // сокет кодом 4000 ("replaced") — чтобы вкладки не воевали за комнату
-  replaceSameIdPeer(peer) {
+  // участник вернулся с новым соединением (смена сети, обрыв signaling).
+  // НЕ разрушаем его медиа-сессию, а переносим её новому объекту: транспорты,
+  // producers и consumers живут дальше — вернувшийся клиент оживит их
+  // ICE-рестартом (restartIce), а остальным участникам перестраивать свои
+  // consumer'ы не придётся: с их точки зрения участник никуда не уходил
+  // (никаких peerClosed/newPeer). Старый сокет рвём кодом 4000 ("replaced") —
+  // живая старая вкладка должна остановиться, а не воевать за комнату
+  adoptSameIdPeer(peer) {
     const existing = this.peers.get(peer.id);
     if (!existing || existing === peer) return false;
-    console.log(`[room ${this.id}] peer ${peer.displayName ?? peer.id.slice(0, 8)} переподключился — заменяем старую сессию`);
-    this.removePeer(peer.id);
-    existing.socket.close(4000, 'replaced');
+    console.log(`[room ${this.id}] peer ${existing.displayName ?? existing.id.slice(0, 8)} вернулся на новом соединении — переносим медиа-сессию`);
+
+    clearTimeout(existing.detachTimer);
+    peer.transports = existing.transports;
+    peer.producers = existing.producers;
+    peer.consumers = existing.consumers;
+    peer.displayName = existing.displayName;
+    peer.joined = existing.joined;
+    peer.mediaStalledTicks = 0;
+
+    // листенеры чистки у producers/consumers захватили старый объект peer —
+    // перевешиваем их на нового владельца (старые отработают вхолостую
+    // по уже опустевшему объекту, это безвредно)
+    for (const producer of peer.producers.values()) {
+      producer.on('transportclose', () => peer.producers.delete(producer.id));
+    }
+    for (const consumer of peer.consumers.values()) {
+      consumer.on('transportclose', () => peer.consumers.delete(consumer.id));
+      consumer.on('producerclose', () => {
+        peer.consumers.delete(consumer.id);
+        peer.send('consumerClosed', { consumerId: consumer.id });
+      });
+    }
+
+    // старый объект больше не сессия: его хендлеры (close/error сокета)
+    // не должны трогать комнату
+    existing.superseded = true;
+    existing.joined = false;
+    existing.room = null;
+    existing.transports = new Map();
+    existing.producers = new Map();
+    existing.consumers = new Map();
+    this.peers.set(peer.id, peer);
+    peer.room = this;
+
+    // старый сокет мог ещё выглядеть живым (сеть клиента умерла раньше,
+    // чем сервер это заметил) — закрываем с кодом 4000
+    if (existing.socket.readyState === existing.socket.OPEN) {
+      existing.socket.close(4000, 'replaced');
+    }
     return true;
+  }
+
+  // signaling-сокет участника закрылся. Сессию не сносим сразу: даём
+  // peerDetachGraceMs на возвращение тем же peerId (смена сети — клиент
+  // переподключится и оживит транспорты ICE-рестартом). Не вернулся —
+  // обычный выход: close сессии + peerClosed всем остальным
+  onPeerSocketClose(peer) {
+    if (this.closed) return;
+    // сессия уже передана новому соединению (или пира уже нет) — не трогаем
+    if (this.peers.get(peer.id) !== peer || peer.superseded) return;
+    if (!peer.joined) {
+      this.removePeer(peer.id); // не успел войти — держать нечего
+      return;
+    }
+    peer.detached = true;
+    clearTimeout(peer.detachTimer);
+    peer.detachTimer = setTimeout(() => {
+      if (this.closed || this.peers.get(peer.id) !== peer) return;
+      console.log(`[room ${this.id}] ${peer.displayName} не вернулся за grace-период — закрываем сессию`);
+      this.removePeer(peer.id);
+    }, config.app.peerDetachGraceMs);
+    console.log(`[room ${this.id}] связь с ${peer.displayName} потеряна — ждём возвращения ${config.app.peerDetachGraceMs}мс`);
   }
 
   // Здоровье исходящего медиа участника. Вызывается интервалом из rooms.js.
@@ -76,7 +139,8 @@ class Room {
   checkMediaHealth() {
     if (this.closed) return;
     for (const peer of this.peers.values()) {
-      if (!peer.joined || peer.closed) continue;
+      // detached-пир ждёт возвращения (уведомлять некого) — пропускаем
+      if (!peer.joined || peer.closed || peer.detached) continue;
 
       // paused producers не шлют RTP по своей воле — не считаем их мёртвыми
       const active = [...peer.producers.values()].filter((p) => !p.paused && !p.closed);
@@ -111,6 +175,8 @@ class Room {
   removePeer(peerId) {
     const peer = this.peers.get(peerId);
     if (!peer) return;
+    clearTimeout(peer.detachTimer);
+    peer.detachTimer = null;
     this.peers.delete(peerId);
     peer.close();
     for (const other of this.peers.values()) other.send('peerClosed', { peerId });

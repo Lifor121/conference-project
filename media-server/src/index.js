@@ -108,7 +108,9 @@ wss.on('connection', (socket, req) => {
     console.log(`[ws] disconnect peer=${peer.id.slice(0, 8)}`);
     if (peer.room) {
       try {
-        peer.room.removePeer(peer.id);
+        // сессия не сносится сразу: grace-период на возвращение тем же
+        // peerId (смена сети) — см. Room.onPeerSocketClose
+        peer.room.onPeerSocketClose(peer);
       } catch (err) {
         console.error(`[ws] cleanup error: ${err.message}`);
       }

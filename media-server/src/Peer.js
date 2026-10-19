@@ -13,6 +13,14 @@ class Peer {
     this.producers = new Map();  // producerId  -> Producer
     this.consumers = new Map();  // consumerId  -> Consumer
     this.closed = false;
+    // signaling-сокет умер, но медиа-сессия (транспорты, потоки) живёт ещё
+    // peerDetachGraceMs — ждём возвращения участника (см. Room.onPeerSocketClose)
+    this.detached = false;
+    this.detachTimer = null;
+    // сессия передана новому Peer (тот же peerId вернулся с нового сокета):
+    // этот объект больше не представляет участника, его хендлеры ничего
+    // не должны трогать (см. Room.adoptSameIdPeer)
+    this.superseded = false;
     // сколько проверок здоровья подряд все активные producers молчали
     // (score 0 = RTP от участника не приходит) — см. Room.checkMediaHealth
     this.mediaStalledTicks = 0;
@@ -26,6 +34,9 @@ class Peer {
   close() {
     if (this.closed) return;
     this.closed = true;
+    clearTimeout(this.detachTimer);
+    this.detachTimer = null;
+    this.detached = false;
     // joined/room сбрасываем: после close обработчики сокета и signaling
     // не должны ни чистить этого пира повторно, ни принимать его запросы
     this.joined = false;
