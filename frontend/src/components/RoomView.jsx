@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRoom } from '../room/useRoom.js'
 import { LeaveIcon, MicIcon, MicOffIcon, VideoIcon, VideoOffIcon } from './icons.jsx'
 
-function VideoTile({ track, label, muted, fallbackInitial }) {
+function VideoTile({ track, label, muted, fallbackInitial, detached }) {
   const ref = useRef(null)
   const stream = useMemo(() => (track ? new MediaStream([track]) : null), [track])
 
@@ -11,11 +11,17 @@ function VideoTile({ track, label, muted, fallbackInitial }) {
   }, [stream])
 
   return (
-    <div className="video-tile">
+    <div className={`video-tile${detached ? ' detached' : ''}`}>
       {stream ? (
         <video ref={ref} autoPlay playsInline muted />
       ) : (
         <div className="avatar">{fallbackInitial}</div>
+      )}
+      {detached && (
+        <div className="tile-detached">
+          <div className="spinner" />
+          <span>переподключается…</span>
+        </div>
       )}
       <div className="tile-label">
         {muted && <MicOffIcon className="tile-mute" />}
@@ -49,6 +55,7 @@ function RemotePeerTiles({ peer }) {
         muted={!peer.tracks['webcam:audio']}
         label={peer.displayName}
         fallbackInitial={peer.displayName[0]}
+        detached={Boolean(peer.detached)}
       />
       {peer.tracks['screen:video'] && (
         <VideoTile

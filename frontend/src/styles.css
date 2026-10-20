@@ -73,6 +73,12 @@ label { display: flex; flex-direction: column; gap: 6px; font-size: 14px; color:
 .video-tile { position: relative; background: #000; border-radius: 12px; overflow: hidden; aspect-ratio: 16 / 9; }
 .video-tile video { width: 100%; height: 100%; object-fit: cover; }
 .tile-label { position: absolute; left: 8px; bottom: 8px; background: rgba(0, 0, 0, 0.6); padding: 2px 8px; border-radius: 6px; font-size: 13px; }
+/* участник потерял связь (смена сети) — ждём его возвращения в grace */
+.tile-detached {
+  position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 10px; background: rgba(0, 0, 0, 0.55); font-size: 14px; color: #fff;
+}
+.tile-detached .spinner { width: 28px; height: 28px; border-width: 3px; }
 .avatar { position: absolute; inset: 0; display: grid; place-items: center; font-size: 64px; background: var(--panel); }
 .room-footer { display: flex; justify-content: center; padding: 16px 20px; }
 .controls { display: flex; gap: 12px; }

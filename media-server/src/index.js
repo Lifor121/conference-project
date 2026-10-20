@@ -104,13 +104,15 @@ wss.on('connection', (socket, req) => {
     }
   });
 
-  socket.on('close', () => {
-    console.log(`[ws] disconnect peer=${peer.id.slice(0, 8)}`);
+  socket.on('close', (code) => {
+    console.log(`[ws] disconnect peer=${peer.id.slice(0, 8)} code=${code}`);
     if (peer.room) {
       try {
-        // сессия не сносится сразу: grace-период на возвращение тем же
-        // peerId (смена сети) — см. Room.onPeerSocketClose
-        peer.room.onPeerSocketClose(peer);
+        // сессия не сносится сразу, если клиент может вернуться (смена
+        // сети): grace-период на возвращение тем же peerId. Код закрытия
+        // отличает намеренный выход (1000 — убираем сразу) от обрыва —
+        // см. Room.onPeerSocketClose
+        peer.room.onPeerSocketClose(peer, code);
       } catch (err) {
         console.error(`[ws] cleanup error: ${err.message}`);
       }

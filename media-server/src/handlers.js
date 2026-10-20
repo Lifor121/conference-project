@@ -12,6 +12,9 @@ function peerInfo(peer) {
   return {
     id: peer.id,
     displayName: peer.displayName,
+    // detached — signaling-сокет отвалился, но сессия живёт в grace:
+    // вернувшийся после обрыва показывает у него бейдж «переподключается…»
+    detached: Boolean(peer.detached),
     producers: [...peer.producers.values()].map((p) => ({
       producerId: p.id,
       kind: p.kind,
@@ -114,6 +117,18 @@ async function join(peer, roomId, data) {
     resumed,
     transports: transportsInfo(peer),
   };
+}
+
+// явный выход из комнаты (кнопка «Выйти», закрытие вкладки): не ждём
+// grace-периода — сессию снимаем сразу, остальные сразу видят peerClosed.
+// Следом клиент закроет сокет кодом 1000 с тем же эффектом — это страховка
+// на случай, когда close-фрейм не долетел
+async function leave(peer) {
+  if (peer.room && !peer.superseded && peer.joined) {
+    console.log(`[room ${peer.room.id}] ${peer.displayName} вышел (leave) — убираем сразу`);
+    peer.room.removePeer(peer.id);
+  }
+  return {};
 }
 
 // WebRTC-транспорты
@@ -333,6 +348,7 @@ async function resumeProducer(peer, _roomId, data) {
 
 const handlers = {
   join,
+  leave,
   createWebRtcTransport,
   connectWebRtcTransport,
   restartIce,

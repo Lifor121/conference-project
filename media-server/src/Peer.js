@@ -17,6 +17,9 @@ class Peer {
     // peerDetachGraceMs — ждём возвращения участника (см. Room.onPeerSocketClose)
     this.detached = false;
     this.detachTimer = null;
+    // отсроченное peerDetatched остальным (см. Room.onPeerSocketClose):
+    // короткие блипы не показываем, долгое отсутствие — бейдж на плитке
+    this.detachNotifyTimer = null;
     // сессия передана новому Peer (тот же peerId вернулся с нового сокета):
     // этот объект больше не представляет участника, его хендлеры ничего
     // не должны трогать (см. Room.adoptSameIdPeer)
@@ -36,6 +39,8 @@ class Peer {
     this.closed = true;
     clearTimeout(this.detachTimer);
     this.detachTimer = null;
+    clearTimeout(this.detachNotifyTimer);
+    this.detachNotifyTimer = null;
     this.detached = false;
     // joined/room сбрасываем: после close обработчики сокета и signaling
     // не должны ни чистить этого пира повторно, ни принимать его запросы

@@ -219,7 +219,7 @@ export function useRoom({ session }) {
       setRemotePeers((prev) =>
         prev.some((p) => p.id === peerId_)
           ? prev
-          : [...prev, { id: peerId_, displayName, tracks: {} }],
+          : [...prev, { id: peerId_, displayName, tracks: {}, detached: false }],
       )
     }
 
@@ -427,6 +427,19 @@ export function useRoom({ session }) {
         case 'peerClosed':
           removePeer(data.peerId)
           break
+        case 'peerDetached':
+          // участник потерял связь (смена сети) и ещё не вернулся — его
+          // плитка показывает «переподключается…», а не замерший кадр
+          setRemotePeers((prev) =>
+            prev.map((p) => (p.id === data.peerId ? { ...p, detached: true } : p)),
+          )
+          break
+        case 'peerResumed':
+          // вернулся на новом соединении — снимаем бейдж, медиа оживает
+          setRemotePeers((prev) =>
+            prev.map((p) => (p.id === data.peerId ? { ...p, detached: false } : p)),
+          )
+          break
         case 'newProducer':
           consumeProducer({ producerId: data.producerId }).catch((e) =>
             console.error('[consume] не удалось начать приём:', e.message),
@@ -469,10 +482,15 @@ export function useRoom({ session }) {
 
       setRemotePeers((prev) => {
         const byId = new Map(incoming.map((p) => [p.id, p]))
-        const kept = prev.filter((p) => byId.has(p.id))
+        // живые тайлы не сбрасываем; статус detached подтягиваем с сервера
+        const kept = prev
+          .filter((p) => byId.has(p.id))
+          .map((p) => ({ ...p, detached: Boolean(byId.get(p.id).detached) }))
         const keptIds = new Set(kept.map((p) => p.id))
         for (const p of incoming) {
-          if (!keptIds.has(p.id)) kept.push({ id: p.id, displayName: p.displayName, tracks: {} })
+          if (!keptIds.has(p.id)) {
+            kept.push({ id: p.id, displayName: p.displayName, tracks: {}, detached: Boolean(p.detached) })
+          }
         }
         return kept
       })
@@ -525,7 +543,12 @@ export function useRoom({ session }) {
       }
 
       setRemotePeers(
-        joined.peers.map((p) => ({ id: p.id, displayName: p.displayName, tracks: {} })),
+        joined.peers.map((p) => ({
+          id: p.id,
+          displayName: p.displayName,
+          tracks: {},
+          detached: Boolean(p.detached),
+        })),
       )
 
       // 2) Device с capabilities роутера — грузится один раз, возможности комнаты не меняются
@@ -680,10 +703,33 @@ export function useRoom({ session }) {
     })
     refs.signaling = signaling
 
+    // уход со страницы (закрытие вкладки, внешний переход): честно говорим
+    // серверу, что уходим навсегда — он уберёт нас из комнаты сразу, а не
+    // будет держать плитку-призрак весь grace-период. Перезагрузку (F5)
+    // отличаем заранее через Navigation API (Chrome/Edge/Android): после
+    // неё возвращаемся тем же peerId через пару секунд и сервер продолжает
+    // сессию. Где Navigation API нет — считаем, что вернёмся (безопаснее)
+    let pageReloading = false
+    try {
+      window.navigation?.addEventListener?.('navigate', (e) => {
+        if (e?.navigationType === 'reload') pageReloading = true
+      })
+    } catch {
+      // нет Navigation API — любое закрытие считаем «может вернёмся»
+    }
+    const onPageHide = (event) => {
+      if (disposed) return
+      // persisted — ушли в bfcache, страница ещё может вернуться как есть
+      if (event.persisted || pageReloading) return
+      refs.signaling?.close() // leave-запрос + close(1000)
+    }
+    window.addEventListener('pagehide', onPageHide)
+
     // cleanup — выполняется при размонтировании (в т.ч. при выходе из комнаты)
     return () => {
       disposed = true
       clearTimeout(joinRetryTimer)
+      window.removeEventListener('pagehide', onPageHide)
       refs.signaling?.close()
       refs.sendTransport?.close()
       closeRecvTransport()

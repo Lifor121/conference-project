@@ -18,12 +18,22 @@ module.exports = {
     mediaHealthIntervalMs: parseInt(process.env.MEDIA_HEALTH_INTERVAL_MS || '5000', 10),
     mediaStalledTicks: parseInt(process.env.MEDIA_STALLED_TICKS || '2', 10),
 
-    // сколько времени после потери signaling-сокета сервер хранит сессию
-    // участника (транспорты, producers, consumers): даём шанс вернуться
-    // тем же peerId с нового соединения (смена сети) и оживить медиа
-    // ICE-рестартом вместо полного пересоздания. Не вернулся — обычный
-    // peerClosed остальным
-    peerDetachGraceMs: parseInt(process.env.PEER_DETACH_GRACE_MS || '10000', 10),
+    // сколько времени после НЕнамеренного обрыва signaling-сокета (сеть
+    // умерла — close 1006/4001; намеренный выход кодом 1000 убирает
+    // участника сразу, без grace) сервер хранит сессию (транспорты,
+    // producers, consumers): даём шанс вернуться тем же peerId с нового
+    // соединения (смена сети) и оживить медиа ICE-рестартом. 30с с запасом
+    // перекрывают возврат wifi на телефоне (переассоциация радиомодуля
+    // после обрыва мобильной сети занимает 10–30с). Не вернулся —
+    // обычный peerClosed остальным
+    peerDetachGraceMs: parseInt(process.env.PEER_DETACH_GRACE_MS || '30000', 10),
+
+    // через сколько молчания участника (обрыв signaling, медиа замерло)
+    // сообщать ОСТАЛЬНЫМ peerDetached — его плитка показывает
+    // «переподключается…» вместо замершего кадра. Короче 5с не нужно:
+    // обычный resume при смене сети укладывается в 1–3с и не должен
+    // мигать бейджем
+    peerDetachNotifyMs: parseInt(process.env.PEER_DETACH_NOTIFY_MS || '5000', 10),
 
     // время жизни TURN-кредов, выпускаемых при join (REST API coturn).
     // 6 часов с запасом перекрывают любую встречу; при re-join выпускаются заново

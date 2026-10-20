@@ -66,6 +66,7 @@ class Room {
     console.log(`[room ${this.id}] peer ${existing.displayName ?? existing.id.slice(0, 8)} вернулся на новом соединении — переносим медиа-сессию`);
 
     clearTimeout(existing.detachTimer);
+    clearTimeout(existing.detachNotifyTimer);
     peer.transports = existing.transports;
     peer.producers = existing.producers;
     peer.consumers = existing.consumers;
@@ -98,6 +99,12 @@ class Room {
     this.peers.set(peer.id, peer);
     peer.room = this;
 
+    // наблюдатели могли увидеть peerDetached (возвращение затянулось) —
+    // снимаем бейдж «переподключается…» с его плитки
+    for (const other of this.peers.values()) {
+      if (other.id !== peer.id) other.send('peerResumed', { peerId: peer.id });
+    }
+
     // старый сокет мог ещё выглядеть живым (сеть клиента умерла раньше,
     // чем сервер это заметил) — закрываем с кодом 4000
     if (existing.socket.readyState === existing.socket.OPEN) {
@@ -106,16 +113,25 @@ class Room {
     return true;
   }
 
-  // signaling-сокет участника закрылся. Сессию не сносим сразу: даём
-  // peerDetachGraceMs на возвращение тем же peerId (смена сети — клиент
-  // переподключится и оживит транспорты ICE-рестартом). Не вернулся —
-  // обычный выход: close сессии + peerClosed всем остальным
-  onPeerSocketClose(peer) {
+  // signaling-сокет участника закрылся. Код закрытия отличает намерение:
+  //  - 1000 "leave" — клиент сказал, что уходит навсегда (кнопка «Выйти»,
+  //    закрытие вкладки): grace не нужен, убираем сразу, остальные видят
+  //    peerClosed мгновенно;
+  //  - всё остальное (1006 — сеть умерла без close-фрейма, 4001 — клиент
+  //    пересобирает соединение и вернётся, 1005 — старый клиент) — даём
+  //    peerDetachGraceMs на возвращение тем же peerId (смена сети):
+  //    вернётся — оживит транспорты ICE-рестартом, нет — peerClosed
+  onPeerSocketClose(peer, code = 1006) {
     if (this.closed) return;
     // сессия уже передана новому соединению (или пира уже нет) — не трогаем
     if (this.peers.get(peer.id) !== peer || peer.superseded) return;
     if (!peer.joined) {
       this.removePeer(peer.id); // не успел войти — держать нечего
+      return;
+    }
+    if (code === 1000) {
+      console.log(`[room ${this.id}] ${peer.displayName} вышел (close 1000) — убираем сразу`);
+      this.removePeer(peer.id);
       return;
     }
     peer.detached = true;
@@ -125,7 +141,17 @@ class Room {
       console.log(`[room ${this.id}] ${peer.displayName} не вернулся за grace-период — закрываем сессию`);
       this.removePeer(peer.id);
     }, config.app.peerDetachGraceMs);
-    console.log(`[room ${this.id}] связь с ${peer.displayName} потеряна — ждём возвращения ${config.app.peerDetachGraceMs}мс`);
+    // короткие блипы (смена сети, resume за 1–3с) никому не показываем;
+    // отсутствует дольше peerDetachNotifyMs — сообщаем остальным, чтобы
+    // его плитка показывала «переподключается…», а не замерший кадр
+    clearTimeout(peer.detachNotifyTimer);
+    peer.detachNotifyTimer = setTimeout(() => {
+      if (this.closed || this.peers.get(peer.id) !== peer || !peer.detached) return;
+      for (const other of this.peers.values()) {
+        if (other.id !== peer.id) other.send('peerDetached', { peerId: peer.id });
+      }
+    }, config.app.peerDetachNotifyMs);
+    console.log(`[room ${this.id}] связь с ${peer.displayName} потеряна (close ${code}) — ждём возвращения ${config.app.peerDetachGraceMs}мс`);
   }
 
   // Здоровье исходящего медиа участника. Вызывается интервалом из rooms.js.
@@ -177,6 +203,8 @@ class Room {
     if (!peer) return;
     clearTimeout(peer.detachTimer);
     peer.detachTimer = null;
+    clearTimeout(peer.detachNotifyTimer);
+    peer.detachNotifyTimer = null;
     this.peers.delete(peerId);
     peer.close();
     for (const other of this.peers.values()) other.send('peerClosed', { peerId });

@@ -30,6 +30,12 @@
 const RECONNECT_BASE_MS = 1000
 const RECONNECT_MAX_MS = 10000
 const CLOSE_CODE_REPLACED = 4000
+// наш код «пересобираю соединение — вернусь»: сервер держит сессию
+// в grace-периоде и переносит её на новый сокет (resume + ICE-рестарт)
+const CLOSE_CODE_RECONNECT = 4001
+// «ухожу навсегда» (кнопка «Выйти», pagehide) — сервер убирает участника
+// из комнаты сразу, остальные видят peerClosed мгновенно
+const CLOSE_CODE_LEAVE = 1000
 
 // проба сети: раз в секунду, пока ждём следующей попытки подключения;
 // любой HTTP-ответ (даже 4xx/5xx) — путь до сервера жив
@@ -239,8 +245,10 @@ export class SignalingClient {
 
   // прибрать текущее соединение: ожидающие запросы падают сразу,
   // onclose старого сокета (который при мёртвой сети может не прийти
-  // или прийти через минуты) игнорируется как устаревший
-  _teardown(reason, { reconnect = true } = {}) {
+  // или прийти через минуты) игнорируется как устаревший.
+  // close-код сообщается серверу: 4001 = «вернусь» (grace на сессию),
+  // 1000 = «ухожу навсегда» (сессию снять сразу)
+  _teardown(reason, { reconnect = true, code = CLOSE_CODE_RECONNECT } = {}) {
     this._settle?.reject(new Error(reason))
     for (const { reject } of this.pending.values()) {
       reject(new Error(reason))
@@ -251,7 +259,7 @@ export class SignalingClient {
     if (!ws) return
     if (reconnect) this.ws = null // события старого сокета больше не актуальны
     try {
-      ws.close()
+      ws.close(code, reconnect ? 'reconnect' : 'leave')
     } catch {
       // уже закрыт
     }
@@ -413,6 +421,21 @@ export class SignalingClient {
     window.removeEventListener('online', this._onOnline)
     window.removeEventListener('offline', this._onOffline)
     netConnection()?.removeEventListener?.('change', this._onNetChange)
-    this._teardown('Соединение закрыто', { reconnect: false })
+    this._sayGoodbye()
+    this._teardown('Соединение закрыто', { reconnect: false, code: CLOSE_CODE_LEAVE })
+  }
+
+  // уходим навсегда — сообщаем серверу явно, чтобы он убрал нас из комнаты
+  // сразу, а не держал плитку-призрак весь grace-период. Файр-энд-форгет:
+  // ответ уже не важен; если сеть умерла — не доехало ни это, ни сам
+  // close-фрейм, и сервер сам разобьётся grace-таймером
+  _sayGoodbye() {
+    const ws = this.ws
+    if (!ws || ws.readyState !== WebSocket.OPEN) return
+    try {
+      ws.send(JSON.stringify({ id: this.nextId++, method: 'leave', data: {} }))
+    } catch {
+      // сокет уже умирает — не критично
+    }
   }
 }
