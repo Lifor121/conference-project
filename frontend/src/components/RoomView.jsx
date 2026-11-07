@@ -112,8 +112,11 @@ export default function RoomView({ session, onLeave }) {
     videoEnabled,
     localVideoTrack,
     localAudioTrack,
+    screenEnabled,
+    localScreenTrack,
     toggleAudio,
     toggleVideo,
+    toggleScreenShare,
   } = useRoom({ session })
 
   const joined = phase === 'joined'
@@ -139,6 +142,7 @@ export default function RoomView({ session, onLeave }) {
 
   const totalTiles =
     1 +
+    (screenEnabled && localScreenTrack ? 1 : 0) +
     remotePeers.length +
     remotePeers.filter((p) => Boolean(p.tracks['screen:video'])).length
 
@@ -211,6 +215,16 @@ export default function RoomView({ session, onLeave }) {
             isLocal={true}
             speaking={localSpeaking}
           />
+          {screenEnabled && localScreenTrack && (
+            <VideoTile
+              key="screen-local"
+              track={localScreenTrack}
+              label={`${session.displayName} · Экран (Вы)`}
+              fallbackInitial="Э"
+              isLocal={false}
+              speaking={false}
+            />
+          )}
           {remotePeers.map((p) => (
             <RemotePeerTiles key={p.id} peer={p} />
           ))}
@@ -267,9 +281,10 @@ export default function RoomView({ session, onLeave }) {
 
           <button
             type="button"
-            className="dock-btn secondary"
+            className={`dock-btn ${screenEnabled ? 'active' : 'secondary'}`}
+            onClick={toggleScreenShare}
             disabled={!joined}
-            title="Демонстрация экрана"
+            title={screenEnabled ? 'Остановить демонстрацию' : 'Демонстрация экрана'}
           >
             <ScreenShareIcon size={22} />
           </button>

@@ -69,12 +69,16 @@ export function useRoom({ session }) {
   const [localAudioTrack, setLocalAudioTrack] = useState(
     () => session.stream?.getAudioTracks()[0] ?? null,
   )
+  const [screenEnabled, setScreenEnabled] = useState(false)
+  const [localScreenTrack, setLocalScreenTrack] = useState(null)
+  const screenEnabledRef = useRef(false)
   // ref-зеркала: контролы читают актуальное значение без stale-замыканий
   const audioEnabledRef = useRef(session.audioEnabled)
   const videoEnabledRef = useRef(session.videoEnabled)
 
   const setAudioEnabled = (v) => { audioEnabledRef.current = v; setAudioEnabledState(v) }
   const setVideoEnabled = (v) => { videoEnabledRef.current = v; setVideoEnabledState(v) }
+  const setScreenEnabledSync = (v) => { screenEnabledRef.current = v; setScreenEnabled(v) }
 
   // mediasoup-объекты — в ref: их изменения не должны вызывать рендеры
   const r = useRef({
@@ -113,6 +117,10 @@ export function useRoom({ session }) {
       if (key === 'webcam:video') {
         videoEnabledRef.current = false
         setVideoEnabledState(false)
+      }
+      if (key === 'screen:video') {
+        // пользователь нажал «Остановить показ» в браузерном диалоге
+        stopScreenShare()
       }
     })
   }, [])
@@ -161,8 +169,7 @@ export function useRoom({ session }) {
     }
   }
 
-  async function toggleVideo() {
-    const refs = r.current
+  async function toggleVideo() {    const refs = r.current
     if (!refs.signaling) return
     const producer = refs.producers.get('webcam:video')
     try {
@@ -200,6 +207,58 @@ export function useRoom({ session }) {
       }
     } catch (e) {
       console.error('[toggleVideo]', e.message)
+    }
+  }
+
+  // Останавливает демонстрацию экрана: закрывает producer на сервере,
+  // останавливает трек и сбрасывает состояние. Вызывается из toggleScreenShare
+  // и из watchProducer (когда пользователь нажал «Остановить» в браузере).
+  async function stopScreenShare() {
+    const refs = r.current
+    const producer = refs.producers.get('screen:video')
+    refs.producers.delete('screen:video')
+    setScreenEnabledSync(false)
+    setLocalScreenTrack(null)
+    if (producer && !producer.closed) {
+      producer.track?.stop()
+      try {
+        await refs.signaling?.request('pauseProducer', { producerId: producer.id })
+      } catch {
+        // signaling мог уже отвалиться — не критично
+      }
+      producer.close()
+    }
+  }
+
+  async function toggleScreenShare() {
+    const refs = r.current
+    if (!refs.signaling || !refs.sendTransport) return
+    if (screenEnabledRef.current) {
+      await stopScreenShare()
+      return
+    }
+    try {
+      const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false })
+      const track = stream.getVideoTracks()[0]
+      if (!track) throw new Error('Трек экрана не получен')
+      try {
+        const p = await withTimeout(
+          refs.sendTransport.produce({ track, appData: { source: 'screen' } }),
+          PRODUCE_TIMEOUT_MS,
+          'демонстрация экрана',
+        )
+        watchProducer(p, 'screen:video')
+        setScreenEnabledSync(true)
+        setLocalScreenTrack(track)
+      } catch (e) {
+        track.stop()
+        throw e
+      }
+    } catch (e) {
+      if (e.name !== 'NotAllowedError') {
+        // пользователь просто закрыл диалог — не шумим
+        console.error('[toggleScreenShare]', e.message)
+      }
     }
   }
 
@@ -743,6 +802,8 @@ export function useRoom({ session }) {
       refs.consumers.clear()
       for (const track of refs.extraLocalTracks) track.stop()
       refs.extraLocalTracks.clear()
+      // остановить демонстрацию экрана, если ещё идёт
+      refs.producers.get('screen:video')?.track?.stop?.()
       refs.producers.clear()
       refs.signaling = null
       refs.device = null
@@ -753,6 +814,7 @@ export function useRoom({ session }) {
   return {
     phase, error, remotePeers,
     audioEnabled, videoEnabled, localVideoTrack, localAudioTrack,
-    toggleAudio, toggleVideo,
+    screenEnabled, localScreenTrack,
+    toggleAudio, toggleVideo, toggleScreenShare,
   }
 }
