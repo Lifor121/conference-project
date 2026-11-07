@@ -640,28 +640,45 @@ label {
   border-radius: 50%;
 }
 
-/* Рабочая область видео (НИКОГДА не выталкивает футер вниз) */
+/* Рабочая область видео */
 .room-video-stage {
   flex: 1 1 0%;
   min-height: 0;
   min-width: 0;
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   padding: 12px 18px;
-  overflow: hidden;
+  overflow-y: auto;
+  overflow-x: hidden;
   position: relative;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-hover) transparent;
+  -webkit-overflow-scrolling: touch;
+}
+
+.room-video-stage::-webkit-scrollbar {
+  width: 6px;
+}
+
+.room-video-stage::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.room-video-stage::-webkit-scrollbar-thumb {
+  background: var(--border-hover);
+  border-radius: 4px;
 }
 
 .video-grid {
   width: 100%;
-  height: 100%;
-  max-height: 100%;
+  max-width: 1600px;
   min-height: 0;
+  margin: auto 0;
   display: grid;
   align-items: center;
   justify-content: center;
-  overflow: hidden;
 }
 
 /* 1 участник */
@@ -745,7 +762,7 @@ label {
 /* Общий случай (>6 участников) */
 .video-grid {
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
-  grid-auto-rows: minmax(0, 1fr);
+  grid-auto-rows: minmax(180px, auto);
   gap: 12px;
 }
 
@@ -773,6 +790,8 @@ label {
   transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.15s ease;
   cursor: pointer;
   user-select: none;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .video-tile:hover {
@@ -784,10 +803,12 @@ label {
   outline-offset: 2px;
 }
 
-/* РАМКА ГОВОРЯЩЕГО УЧАСТНИКА */
-.video-tile.is-speaking {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 2px var(--accent), 0 0 16px rgba(37, 99, 235, 0.25);
+/* РАМКА ГОВОРЯЩЕГО УЧАСТНИКА (всегда видна, в т.ч. в фокусе и превью) */
+.video-tile.is-speaking,
+.video-tile.is-focused.is-speaking,
+.video-tile.is-thumbnail.is-speaking {
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 2px var(--accent), 0 0 16px rgba(37, 99, 235, 0.35) !important;
 }
 
 /* ==========================================================================
@@ -815,6 +836,10 @@ label {
   padding: 4px 6px 8px;
   flex-shrink: 0;
   scrollbar-width: thin;
+}
+
+.spotlight-filmstrip:empty {
+  display: none;
 }
 
 .spotlight-filmstrip::-webkit-scrollbar {
@@ -890,6 +915,7 @@ label {
   height: 100%;
   object-fit: cover;
   display: block;
+  pointer-events: none;
 }
 
 .tile-video-element.is-screen {
@@ -908,6 +934,7 @@ label {
   align-items: center;
   justify-content: center;
   background: var(--tile-bg);
+  pointer-events: none;
 }
 
 /* Спокойный нейтральный аватар */
@@ -942,6 +969,7 @@ label {
   color: var(--badge-text);
   z-index: 5;
   max-width: calc(100% - 20px);
+  pointer-events: none;
 }
 
 .badge-name {
@@ -968,6 +996,7 @@ label {
   color: var(--text);
   font-size: 14px;
   z-index: 6;
+  pointer-events: none;
 }
 
 .mini-spinner {
@@ -1170,23 +1199,51 @@ label {
   /* Рабочая область видео на мобильных */
   .room-video-stage {
     padding: 8px 8px;
+    overflow-y: auto;
+    overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
+    align-items: center;
   }
 
+  /* Сетка на мобильных: по 2 колонки из квадратных плиток */
   .video-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-auto-rows: auto;
     gap: 8px;
+    width: 100%;
+    margin: auto 0;
+  }
+
+  .video-grid .video-tile {
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    min-height: 0;
+  }
+
+  /* 1 участник на мобильных */
+  .video-grid[data-count="1"] {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
   }
 
   .video-grid[data-count="1"] .video-tile {
     width: 100%;
-    max-width: 100%;
+    max-width: min(100%, 420px);
     max-height: 100%;
     aspect-ratio: 4 / 3;
+    margin: auto;
   }
 
+  /* 2 участника на мобильных */
   .video-grid[data-count="2"] {
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: repeat(2, minmax(0, 1fr));
     gap: 8px;
+    height: 100%;
+    width: 100%;
   }
 
   .video-grid[data-count="2"] .video-tile {
@@ -1196,19 +1253,47 @@ label {
     aspect-ratio: auto;
   }
 
-  .video-grid[data-count="3"],
-  .video-grid[data-count="4"] {
+  /* 3 участника: два столбика, квадраты, 3-я плитка по центру */
+  .video-grid[data-count="3"] {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    grid-template-rows: repeat(2, minmax(0, 1fr));
-    gap: 6px;
+    gap: 8px;
+    width: 100%;
+    margin: auto 0;
   }
 
-  .video-grid[data-count="3"] .video-tile,
+  .video-grid[data-count="3"] .video-tile {
+    width: 100%;
+    aspect-ratio: 1 / 1;
+  }
+
+  .video-grid[data-count="3"] .video-tile:last-child {
+    grid-column: 1 / -1;
+    justify-self: center;
+    width: calc(50% - 4px);
+    aspect-ratio: 1 / 1;
+  }
+
+  /* 4 участника: аккуратный квадрат 2x2 */
+  .video-grid[data-count="4"] {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    width: 100%;
+    margin: auto 0;
+  }
+
   .video-grid[data-count="4"] .video-tile {
     width: 100%;
-    height: 100%;
-    max-height: 100%;
-    aspect-ratio: auto;
+    aspect-ratio: 1 / 1;
+  }
+
+  /* 5+ участников: квадраты по 2 в ряд со скроллингом */
+  .video-grid[data-count="5"] .video-tile:last-child,
+  .video-grid[data-count="7"] .video-tile:last-child,
+  .video-grid[data-count="9"] .video-tile:last-child {
+    grid-column: 1 / -1;
+    justify-self: center;
+    width: calc(50% - 4px);
+    aspect-ratio: 1 / 1;
   }
 
   /* Компактные бейджи и аватары на мобильных */
