@@ -441,12 +441,14 @@ export function useRoom({ session }) {
           )
           break
         case 'newProducer':
-          consumeProducer({ producerId: data.producerId }).catch((e) =>
-            console.error('[consume] не удалось начать приём:', e.message),
-          )
+          requestConsume(data.producerId)
           break
         case 'producerClosed':
-          requestConsume(data.producerId)
+          // producer закрыт (участник выключил камеру / заменил источник) —
+          // удаляем соответствующий consumer, если он есть
+          for (const [id, entry] of [...refs.consumers]) {
+            if (entry.consumer.producerId === data.producerId) removeConsumerTrack(id)
+          }
           break
         case 'producerPaused':
           setProducerPaused(data, true)

@@ -123,7 +123,9 @@ export class SignalingClient {
       this._netEffType = effType
       if (this.closedByUs || this.status === 'replaced') return
       const typeSwitched = NET_TYPES.has(prevType) && NET_TYPES.has(type) && prevType !== type
-      const effTypeSwitched = Boolean(prevEffType && effType && prevEffType !== effType)
+      // effectiveType учитываем только если type недоступен (десктоп): иначе
+      // падение скорости на той же сети (4g→3g) вызовет ложное переподключение
+      const effTypeSwitched = !type && Boolean(prevEffType && effType && prevEffType !== effType)
       if (typeSwitched || effTypeSwitched) {
         this.forceReconnect()
       }
@@ -313,7 +315,7 @@ export class SignalingClient {
     const ac = new AbortController()
     const timer = setTimeout(() => ac.abort(), NET_PROBE_TIMEOUT_MS)
     try {
-      await fetch(url, { cache: 'no-store', signal: ac.signal })
+      await fetch(url, { method: 'HEAD', cache: 'no-store', signal: ac.signal })
       return true
     } catch {
       return false // сетевая ошибка/таймаут — сети нет (или она ещё не готова)

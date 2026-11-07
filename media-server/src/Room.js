@@ -75,12 +75,14 @@ class Room {
     peer.mediaStalledTicks = 0;
 
     // листенеры чистки у producers/consumers захватили старый объект peer —
-    // перевешиваем их на нового владельца (старые отработают вхолостую
-    // по уже опустевшему объекту, это безвредно)
+    // снимаем старые и вешаем на нового владельца
     for (const producer of peer.producers.values()) {
+      producer.removeAllListeners('transportclose');
       producer.on('transportclose', () => peer.producers.delete(producer.id));
     }
     for (const consumer of peer.consumers.values()) {
+      consumer.removeAllListeners('transportclose');
+      consumer.removeAllListeners('producerclose');
       consumer.on('transportclose', () => peer.consumers.delete(consumer.id));
       consumer.on('producerclose', () => {
         peer.consumers.delete(consumer.id);

@@ -13,6 +13,10 @@ async function getOrCreateRoom(roomId, workerPool) {
     rooms.set(roomId, room);
     await room.init();
     room.scheduleClose(); // если join не состоится — комната сама исчезнет через roomCloseDelayMs
+  } else {
+    // параллельный join может прийти, пока init() первого ещё не завершился —
+    // ждём тот же промис инициализации роутера
+    await room.init();
   }
   return room;
 }
