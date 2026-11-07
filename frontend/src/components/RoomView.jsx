@@ -14,7 +14,19 @@ import {
   UsersIcon,
 } from './icons.jsx'
 
-function VideoTile({ track, label, muted, fallbackInitial, detached, isLocal, speaking, isScreen }) {
+function VideoTile({
+  track,
+  label,
+  muted,
+  fallbackInitial,
+  detached,
+  isLocal,
+  speaking,
+  isScreen,
+  isFocused,
+  isThumbnail,
+  onClick,
+}) {
   const ref = useRef(null)
   const stream = useMemo(() => (track ? new MediaStream([track]) : null), [track])
 
@@ -24,7 +36,17 @@ function VideoTile({ track, label, muted, fallbackInitial, detached, isLocal, sp
 
   return (
     <div
-      className={`video-tile${detached ? ' detached' : ''}${isLocal ? ' is-local' : ''}${speaking ? ' is-speaking' : ''}${isScreen ? ' is-screen-tile' : ''}`}
+      className={`video-tile${detached ? ' detached' : ''}${isLocal ? ' is-local' : ''}${speaking ? ' is-speaking' : ''}${isScreen ? ' is-screen-tile' : ''}${isFocused ? ' is-focused' : ''}${isThumbnail ? ' is-thumbnail' : ''}`}
+      onClick={onClick}
+      role={onClick ? 'button' : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      onKeyDown={(e) => {
+        if (onClick && (e.key === 'Enter' || e.key === ' ')) {
+          e.preventDefault()
+          onClick()
+        }
+      }}
+      title={isFocused ? 'Нажмите, чтобы свернуть' : 'Нажмите, чтобы развернуть'}
     >
       {stream ? (
         <video
@@ -75,32 +97,39 @@ function AudioSink({ track }) {
   return <audio ref={ref} autoPlay />
 }
 
-function RemotePeerTiles({ peer }) {
+function RemotePeerTile({ peer, isThumbnail, isFocused, onFocus }) {
   const audioTrack = peer.tracks['webcam:audio']
   const isSpeaking = useAudioActivity(audioTrack, Boolean(audioTrack))
 
   return (
-    <>
-      <VideoTile
-        track={peer.tracks['webcam:video']}
-        muted={!audioTrack}
-        label={peer.displayName}
-        fallbackInitial={(peer.displayName || '?')[0].toUpperCase()}
-        detached={Boolean(peer.detached)}
-        isLocal={false}
-        speaking={isSpeaking}
-      />
-      {peer.tracks['screen:video'] && (
-        <VideoTile
-          track={peer.tracks['screen:video']}
-          label={`${peer.displayName} · Экран`}
-          fallbackInitial="Э"
-          isLocal={false}
-          speaking={false}
-          isScreen={true}
-        />
-      )}
-    </>
+    <VideoTile
+      track={peer.tracks['webcam:video']}
+      muted={!audioTrack}
+      label={peer.displayName}
+      fallbackInitial={(peer.displayName || '?')[0].toUpperCase()}
+      detached={Boolean(peer.detached)}
+      isLocal={false}
+      speaking={isSpeaking}
+      isThumbnail={isThumbnail}
+      isFocused={isFocused}
+      onClick={onFocus}
+    />
+  )
+}
+
+function RemoteScreenTile({ peer, isThumbnail, isFocused, onFocus }) {
+  return (
+    <VideoTile
+      track={peer.tracks['screen:video']}
+      label={`${peer.displayName} · Экран`}
+      fallbackInitial="Э"
+      isLocal={false}
+      speaking={false}
+      isScreen={true}
+      isThumbnail={isThumbnail}
+      isFocused={isFocused}
+      onClick={onFocus}
+    />
   )
 }
 
@@ -123,6 +152,7 @@ export default function RoomView({ session, onLeave }) {
 
   const joined = phase === 'joined'
   const [copied, setCopied] = useState(false)
+  const [focusedTileId, setFocusedTileId] = useState(null)
   const localSpeaking = useAudioActivity(localAudioTrack, audioEnabled)
 
   const [showReconnectOverlay, setShowReconnectOverlay] = useState(false)
@@ -142,11 +172,85 @@ export default function RoomView({ session, onLeave }) {
     }).catch(() => {})
   }
 
-  const totalTiles =
-    1 +
-    (screenEnabled && localScreenTrack ? 1 : 0) +
-    remotePeers.length +
-    remotePeers.filter((p) => Boolean(p.tracks['screen:video'])).length
+  const tileIds = useMemo(() => [
+    'me',
+    ...(screenEnabled && localScreenTrack ? ['screen-local'] : []),
+    ...remotePeers.flatMap((p) => [
+      p.id,
+      ...(p.tracks['screen:video'] ? [`${p.id}-screen`] : []),
+    ]),
+  ], [screenEnabled, localScreenTrack, remotePeers])
+
+  const activeFocusedId = tileIds.includes(focusedTileId) ? focusedTileId : null
+
+  const totalTiles = tileIds.length
+
+  function renderTile(id, { isThumbnail, isFocused }) {
+    const handleToggle = () => {
+      setFocusedTileId((prev) => (prev === id ? null : id))
+    }
+
+    if (id === 'me') {
+      return (
+        <VideoTile
+          key="me"
+          track={videoEnabled ? localVideoTrack : null}
+          muted={!audioEnabled}
+          label={`${session.displayName} (Вы)`}
+          fallbackInitial={(session.displayName || 'Я')[0].toUpperCase()}
+          isLocal={true}
+          speaking={localSpeaking}
+          isThumbnail={isThumbnail}
+          isFocused={isFocused}
+          onClick={handleToggle}
+        />
+      )
+    }
+
+    if (id === 'screen-local') {
+      return (
+        <VideoTile
+          key="screen-local"
+          track={localScreenTrack}
+          label={`${session.displayName} · Экран (Вы)`}
+          fallbackInitial="Э"
+          isLocal={false}
+          speaking={false}
+          isScreen={true}
+          isThumbnail={isThumbnail}
+          isFocused={isFocused}
+          onClick={handleToggle}
+        />
+      )
+    }
+
+    if (id.endsWith('-screen')) {
+      const peerId = id.slice(0, -7)
+      const peer = remotePeers.find((p) => p.id === peerId)
+      if (!peer || !peer.tracks['screen:video']) return null
+      return (
+        <RemoteScreenTile
+          key={id}
+          peer={peer}
+          isThumbnail={isThumbnail}
+          isFocused={isFocused}
+          onFocus={handleToggle}
+        />
+      )
+    }
+
+    const peer = remotePeers.find((p) => p.id === id)
+    if (!peer) return null
+    return (
+      <RemotePeerTile
+        key={id}
+        peer={peer}
+        isThumbnail={isThumbnail}
+        isFocused={isFocused}
+        onFocus={handleToggle}
+      />
+    )
+  }
 
   if (phase === 'error') {
     return (
@@ -207,31 +311,22 @@ export default function RoomView({ session, onLeave }) {
 
       {/* Основная рабочая область видео */}
       <section className="room-video-stage">
-        <div className="video-grid" data-count={totalTiles}>
-          <VideoTile
-            key="me"
-            track={videoEnabled ? localVideoTrack : null}
-            muted={!audioEnabled}
-            label={`${session.displayName} (Вы)`}
-            fallbackInitial={(session.displayName || 'Я')[0].toUpperCase()}
-            isLocal={true}
-            speaking={localSpeaking}
-          />
-          {screenEnabled && localScreenTrack && (
-            <VideoTile
-              key="screen-local"
-              track={localScreenTrack}
-              label={`${session.displayName} · Экран (Вы)`}
-              fallbackInitial="Э"
-              isLocal={false}
-              speaking={false}
-              isScreen={true}
-            />
-          )}
-          {remotePeers.map((p) => (
-            <RemotePeerTiles key={p.id} peer={p} />
-          ))}
-        </div>
+        {activeFocusedId ? (
+          <div className="spotlight-layout">
+            <div className="spotlight-filmstrip">
+              {tileIds
+                .filter((id) => id !== activeFocusedId)
+                .map((id) => renderTile(id, { isThumbnail: true, isFocused: false }))}
+            </div>
+            <div className="spotlight-stage">
+              {renderTile(activeFocusedId, { isThumbnail: false, isFocused: true })}
+            </div>
+          </div>
+        ) : (
+          <div className="video-grid" data-count={totalTiles}>
+            {tileIds.map((id) => renderTile(id, { isThumbnail: false, isFocused: false }))}
+          </div>
+        )}
       </section>
 
       {/* Оверлей начального подключения */}
