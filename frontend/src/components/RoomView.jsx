@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRoom } from '../room/useRoom.js'
 import { useAudioActivity } from '../room/useAudioActivity.js'
 import ThemeToggle from './ThemeToggle.jsx'
@@ -29,10 +29,32 @@ function VideoTile({
 }) {
   const ref = useRef(null)
   const stream = useMemo(() => (track ? new MediaStream([track]) : null), [track])
+  const [aspectRatio, setAspectRatio] = useState(null)
 
   useEffect(() => {
     if (ref.current) ref.current.srcObject = stream
   }, [stream])
+
+  const updateAspectRatio = useCallback(() => {
+    const el = ref.current
+    if (el && el.videoWidth > 0 && el.videoHeight > 0) {
+      setAspectRatio(`${el.videoWidth} / ${el.videoHeight}`)
+    }
+  }, [])
+
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    el.addEventListener('loadedmetadata', updateAspectRatio)
+    el.addEventListener('resize', updateAspectRatio)
+    updateAspectRatio()
+    return () => {
+      el.removeEventListener('loadedmetadata', updateAspectRatio)
+      el.removeEventListener('resize', updateAspectRatio)
+    }
+  }, [stream, updateAspectRatio])
+
+  const dynamicStyle = isFocused && aspectRatio ? { aspectRatio } : undefined
 
   return (
     <div
@@ -47,6 +69,7 @@ function VideoTile({
         }
       }}
       title={isFocused ? 'Нажмите, чтобы свернуть' : 'Нажмите, чтобы развернуть'}
+      style={dynamicStyle}
     >
       {stream ? (
         <video
@@ -55,6 +78,8 @@ function VideoTile({
           playsInline
           muted={isLocal}
           className={`tile-video-element${isScreen ? ' is-screen' : ''}`}
+          onLoadedMetadata={updateAspectRatio}
+          onResize={updateAspectRatio}
         />
       ) : (
         <div className="tile-avatar-wrapper">

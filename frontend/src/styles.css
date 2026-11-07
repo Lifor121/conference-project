@@ -894,20 +894,35 @@ label {
   overflow: hidden;
 }
 
+/* В развёрнутом (фокусном) режиме — видео показывается ПОЛНОСТЬЮ без обрезки */
 .video-tile.is-focused {
-  width: 100%;
-  height: 100%;
-  max-width: min(100%, calc((100vh - 240px) * 16 / 9), 1600px);
+  max-width: 100%;
   max-height: 100%;
+  width: auto;
+  height: auto;
   margin: auto;
   aspect-ratio: 16 / 9;
-  border-color: var(--border-hover);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  background: #000000;
+  border: 1px solid var(--border);
   box-shadow: 0 4px 24px rgba(0, 0, 0, 0.24);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
 }
 
 .video-tile.is-focused.is-screen-tile {
   max-width: 100%;
   max-height: 100%;
+}
+
+.video-tile.is-focused .tile-video-element {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #000000;
 }
 
 .tile-video-element {
@@ -1334,15 +1349,18 @@ label {
   }
 
   .video-tile.is-focused {
-    width: 100%;
-    height: 100%;
     max-width: 100%;
     max-height: 100%;
-    aspect-ratio: auto;
+    width: auto;
+    height: auto;
+    margin: auto;
   }
 
-  .video-tile.is-focused.is-screen-tile {
-    aspect-ratio: auto;
+  .video-tile.is-focused .tile-video-element {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    background: #000000;
   }
 
   /* Нижняя панель с учётом safe area */
