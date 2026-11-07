@@ -114,6 +114,7 @@ export default function RoomView({ session, onLeave }) {
     localAudioTrack,
     screenEnabled,
     localScreenTrack,
+    supportsScreenShare,
     toggleAudio,
     toggleVideo,
     toggleScreenShare,
@@ -279,15 +280,17 @@ export default function RoomView({ session, onLeave }) {
             {videoEnabled ? <VideoIcon size={22} /> : <VideoOffIcon size={22} />}
           </button>
 
-          <button
-            type="button"
-            className={`dock-btn ${screenEnabled ? 'active' : 'secondary'}`}
-            onClick={toggleScreenShare}
-            disabled={!joined}
-            title={screenEnabled ? 'Остановить демонстрацию' : 'Демонстрация экрана'}
-          >
-            <ScreenShareIcon size={22} />
-          </button>
+          {supportsScreenShare && (
+            <button
+              type="button"
+              className={`dock-btn ${screenEnabled ? 'active' : 'secondary'}`}
+              onClick={toggleScreenShare}
+              disabled={!joined}
+              title={screenEnabled ? 'Остановить демонстрацию' : 'Демонстрация экрана'}
+            >
+              <ScreenShareIcon size={22} />
+            </button>
+          )}
 
           <button
             type="button"

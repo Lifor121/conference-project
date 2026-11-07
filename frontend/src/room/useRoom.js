@@ -52,6 +52,18 @@ function getStablePeerId() {
   return id
 }
 
+// Проверка поддержки захвата экрана: getDisplayMedia отсутствует
+// или заблокирован в мобильных браузерах (iOS Safari, Android Chrome/Firefox)
+export function isScreenShareSupported() {
+  if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getDisplayMedia) {
+    return false
+  }
+  const isMobile =
+    /Android|iPhone|iPad|iPod/i.test(navigator.userAgent || '') ||
+    (/Macintosh/i.test(navigator.userAgent || '') && (navigator.maxTouchPoints || 0) > 1)
+  return !isMobile
+}
+
 // remotePeers: [{ id, displayName, tracks: { 'webcam:audio' | 'webcam:video' | 'screen:video': MediaStreamTrack } }]
 export function useRoom({ session }) {
   const [phase, setPhase] = useState('connecting') // connecting | joined | reconnecting | error
@@ -235,6 +247,10 @@ export function useRoom({ session }) {
     if (!refs.signaling || !refs.sendTransport) return
     if (screenEnabledRef.current) {
       await stopScreenShare()
+      return
+    }
+    if (!isScreenShareSupported()) {
+      console.warn('[toggleScreenShare] демонстрация экрана не поддерживается на этом устройстве')
       return
     }
     try {
@@ -814,7 +830,7 @@ export function useRoom({ session }) {
   return {
     phase, error, remotePeers,
     audioEnabled, videoEnabled, localVideoTrack, localAudioTrack,
-    screenEnabled, localScreenTrack,
+    screenEnabled, localScreenTrack, supportsScreenShare: isScreenShareSupported(),
     toggleAudio, toggleVideo, toggleScreenShare,
   }
 }
