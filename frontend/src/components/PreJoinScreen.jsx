@@ -1,7 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import ThemeToggle from './ThemeToggle.jsx'
+import {
+  MicIcon,
+  MicOffIcon,
+  VideoIcon,
+  VideoOffIcon,
+  CopyIcon,
+  CheckIcon,
+} from './icons.jsx'
 
 const DEFAULT_NAME = 'Гость'
-
 
 export default function PreJoinScreen({ roomId, onJoin }) {
   const videoRef = useRef(null)
@@ -13,11 +21,11 @@ export default function PreJoinScreen({ roomId, onJoin }) {
   const [displayName, setDisplayName] = useState(
     () => localStorage.getItem('vc:displayName') || '',
   )
-  // { status: 'requesting' | 'ready' | 'denied' | 'error', on: bool, error: string|null }
   const [audio, setAudio] = useState({ status: 'requesting', on: true, error: null })
   const [video, setVideo] = useState({ status: 'requesting', on: true, error: null })
   const [selected, setSelected] = useState({ cameraId: '', micId: '' })
   const [devices, setDevices] = useState({ cameras: [], mics: [] })
+  const [copied, setCopied] = useState(false)
 
   const acquire = useCallback(async (kind, deviceId) => {
     const setState = kind === 'audio' ? setAudio : setVideo
@@ -30,11 +38,10 @@ export default function PreJoinScreen({ roomId, onJoin }) {
       const stream = await navigator.mediaDevices.getUserMedia(constraints)
       const track = stream.getTracks()[0]
       if (!aliveRef.current) {
-        track.stop() // размонтировались, пока ждали ответа
+        track.stop()
         return
       }
 
-      // заменяем трек этого вида в общем стриме (смена устройства)
       const old = streamRef.current.getTracks().find((t) => t.kind === kind)
       if (old) {
         streamRef.current.removeTrack(old)
@@ -44,7 +51,6 @@ export default function PreJoinScreen({ roomId, onJoin }) {
       track.enabled = true
       setState((s) => ({ ...s, status: 'ready', error: null }))
 
-      // названия устройств доступны только после выдачи разрешения
       const all = await navigator.mediaDevices.enumerateDevices()
       if (!aliveRef.current) return
       setDevices({
@@ -90,120 +96,170 @@ export default function PreJoinScreen({ roomId, onJoin }) {
     ;(kind === 'audio' ? setAudio : setVideo)((s) => ({ ...s, on: track.enabled }))
   }
 
+  function handleCopyRoomId() {
+    navigator.clipboard?.writeText(window.location.href).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    }).catch(() => {})
+  }
+
   function handleJoin() {
     const name = displayName.trim()
     if (name) localStorage.setItem('vc:displayName', name)
     const stream = streamRef.current
-    handedOffRef.current = true // владение треками переезжает в комнату
+    handedOffRef.current = true
     onJoin({
       roomId,
       displayName: name || DEFAULT_NAME,
       stream,
-      // трек существует даже при выключенном тумблере — он просто disabled
       audioEnabled: stream.getAudioTracks().length > 0 && audio.on,
       videoEnabled: stream.getVideoTracks().length > 0 && video.on,
       devices: { ...selected },
     })
   }
 
+  const isVideoLive = video.status === 'ready' && video.on
+  const isAudioLive = audio.status === 'ready' && audio.on
+
   return (
-    <main className="prejoin">
-      <div className="prejoin-video">
-        <video ref={videoRef} autoPlay playsInline muted />
+    <div className="prejoin-layout">
+      <header className="prejoin-topbar">
+        <span className="prejoin-brand">VC</span>
+        <ThemeToggle />
+      </header>
 
-        {video.status === 'requesting' && <div className="video-overlay">Запрашиваем камеру…</div>}
+      <main className="prejoin-card-container">
+        <section className="prejoin-stage">
+          <div className="prejoin-preview-box">
+            <video
+              ref={videoRef}
+              autoPlay
+              playsInline
+              muted
+              className={`preview-video ${isVideoLive ? 'visible' : 'hidden'}`}
+            />
 
-        {video.status === 'denied' && (
-          <div className="video-overlay">
-            <p>Доступ к камере запрещён.</p>
-            <p className="muted">
-              Разрешите в настройках сайта и нажмите «Повторить»
-            </p>
-            <button onClick={() => acquire('video')}>Повторить</button>
+            {!isVideoLive && (
+              <div className="preview-fallback">
+                <div className="fallback-avatar">
+                  {(displayName.trim() || DEFAULT_NAME)[0].toUpperCase()}
+                </div>
+                <span className="fallback-text">
+                  {video.status === 'requesting'
+                    ? 'Запрашиваем камеру…'
+                    : video.status === 'denied'
+                      ? 'Доступ к камере запрещён'
+                      : 'Камера выключена'}
+                </span>
+                {video.status === 'denied' && (
+                  <button type="button" className="btn-retry" onClick={() => acquire('video')}>
+                    Повторить
+                  </button>
+                )}
+              </div>
+            )}
+
+            <div className="preview-quick-controls">
+              <button
+                type="button"
+                className={`quick-ctl-btn ${isAudioLive ? 'active' : 'muted'}`}
+                onClick={() => toggle('audio')}
+                disabled={audio.status !== 'ready'}
+                title={isAudioLive ? 'Выключить микрофон' : 'Включить микрофон'}
+              >
+                {isAudioLive ? <MicIcon size={20} /> : <MicOffIcon size={20} />}
+              </button>
+              <button
+                type="button"
+                className={`quick-ctl-btn ${isVideoLive ? 'active' : 'muted'}`}
+                onClick={() => toggle('video')}
+                disabled={video.status !== 'ready'}
+                title={isVideoLive ? 'Выключить камеру' : 'Включить камеру'}
+              >
+                {isVideoLive ? <VideoIcon size={20} /> : <VideoOffIcon size={20} />}
+              </button>
+            </div>
           </div>
-        )}
+        </section>
 
-        {video.status === 'error' && (
-          <div className="video-overlay">
-            <p>Камера недоступна</p>
-            <p className="muted">{video.error}</p>
-            <button onClick={() => acquire('video')}>Повторить</button>
+        <aside className="prejoin-form-panel">
+          <div className="form-panel-header">
+            <h2>Вход во встречу</h2>
+            <button
+              type="button"
+              className="room-id-pill"
+              onClick={handleCopyRoomId}
+              title="Скопировать ссылку"
+            >
+              <span>Комната {roomId.slice(0, 8)}…</span>
+              {copied ? <CheckIcon size={14} className="copied-icon" /> : <CopyIcon size={14} />}
+            </button>
           </div>
-        )}
 
-        {video.status === 'ready' && !video.on && (
-          <div className="video-overlay">Камера выключена</div>
-        )}
-      </div>
+          <label>
+            Ваше имя
+            <input
+              value={displayName}
+              onChange={(e) => setDisplayName(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleJoin()}
+              placeholder="Гость"
+              autoFocus
+              maxLength={64}
+            />
+          </label>
 
-      <aside className="prejoin-panel">
-        <h2>Вход во встречу</h2>
-        <p className="muted">Комната {roomId.slice(0, 8)}…</p>
+          <label>
+            Микрофон
+            <select
+              value={selected.micId}
+              disabled={audio.status !== 'ready'}
+              onChange={(e) => acquire('audio', e.target.value)}
+            >
+              {devices.mics.length === 0 ? (
+                <option value="">{audio.status === 'ready' ? 'По умолчанию' : 'Не найден'}</option>
+              ) : (
+                devices.mics.map((d) => (
+                  <option key={d.deviceId} value={d.deviceId}>
+                    {d.label || 'Микрофон'}
+                  </option>
+                ))
+              )}
+            </select>
+          </label>
 
-        <label>
-          Ваше имя
-          <input
-            value={displayName}
-            onChange={(e) => setDisplayName(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleJoin()}
-            placeholder="Гость"
-            autoFocus
-          />
-        </label>
+          <label>
+            Камера
+            <select
+              value={selected.cameraId}
+              disabled={video.status !== 'ready'}
+              onChange={(e) => acquire('video', e.target.value)}
+            >
+              {devices.cameras.length === 0 ? (
+                <option value="">{video.status === 'ready' ? 'По умолчанию' : 'Не найдена'}</option>
+              ) : (
+                devices.cameras.map((d) => (
+                  <option key={d.deviceId} value={d.deviceId}>
+                    {d.label || 'Камера'}
+                  </option>
+                ))
+              )}
+            </select>
+          </label>
 
-        <div className="device-row">
-          <button
-            className={audio.on && audio.status === 'ready' ? 'toggle on' : 'toggle'}
-            onClick={() => toggle('audio')}
-            disabled={audio.status !== 'ready'}
-          >
-            {audio.status !== 'ready' ? 'Микрофон недоступен' : audio.on ? 'Микрофон вкл' : 'Микрофон выкл'}
+          {audio.status === 'denied' && (
+            <div className="permission-alert">
+              <span>Доступ к микрофону запрещён в настройках браузера.</span>
+              <button type="button" className="btn-link" onClick={() => acquire('audio')}>
+                Повторить
+              </button>
+            </div>
+          )}
+
+          <button type="button" className="primary btn-join-room" onClick={handleJoin}>
+            Присоединиться
           </button>
-          <button
-            className={video.on && video.status === 'ready' ? 'toggle on' : 'toggle'}
-            onClick={() => toggle('video')}
-            disabled={video.status !== 'ready'}
-          >
-            {video.status !== 'ready' ? 'Камера недоступна' : video.on ? 'Камера вкл' : 'Камера выкл'}
-          </button>
-        </div>
-
-        {audio.status === 'denied' && (
-          <p className="error">
-            Микрофон: доступ запрещён. Разрешите в настройках сайта и{' '}
-            <button className="link" onClick={() => acquire('audio')}>повторите</button>.
-          </p>
-        )}
-        {audio.status === 'error' && <p className="error">Микрофон: {audio.error}</p>}
-
-        <label>
-          Микрофон
-          <select
-            value={selected.micId}
-            disabled={audio.status !== 'ready'}
-            onChange={(e) => acquire('audio', e.target.value)}
-          >
-            {devices.mics.map((d) => (
-              <option key={d.deviceId} value={d.deviceId}>{d.label || 'Микрофон'}</option>
-            ))}
-          </select>
-        </label>
-
-        <label>
-          Камера
-          <select
-            value={selected.cameraId}
-            disabled={video.status !== 'ready'}
-            onChange={(e) => acquire('video', e.target.value)}
-          >
-            {devices.cameras.map((d) => (
-              <option key={d.deviceId} value={d.deviceId}>{d.label || 'Камера'}</option>
-            ))}
-          </select>
-        </label>
-
-        <button className="primary" onClick={handleJoin}>Присоединиться</button>
-      </aside>
-    </main>
+        </aside>
+      </main>
+    </div>
   )
 }

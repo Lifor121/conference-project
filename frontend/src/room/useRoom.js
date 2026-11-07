@@ -66,6 +66,9 @@ export function useRoom({ session }) {
   const [localVideoTrack, setLocalVideoTrack] = useState(
     () => session.stream?.getVideoTracks()[0] ?? null,
   )
+  const [localAudioTrack, setLocalAudioTrack] = useState(
+    () => session.stream?.getAudioTracks()[0] ?? null,
+  )
   // ref-зеркала: контролы читают актуальное значение без stale-замыканий
   const audioEnabledRef = useRef(session.audioEnabled)
   const videoEnabledRef = useRef(session.videoEnabled)
@@ -136,6 +139,7 @@ export function useRoom({ session }) {
           watchProducer(p, 'webcam:audio')
           refs.extraLocalTracks.add(track)
           refs.activeTracks.audio = track
+          setLocalAudioTrack(track)
           setAudioEnabled(true)
         } catch (e) {
           track.stop()
@@ -748,7 +752,7 @@ export function useRoom({ session }) {
 
   return {
     phase, error, remotePeers,
-    audioEnabled, videoEnabled, localVideoTrack,
+    audioEnabled, videoEnabled, localVideoTrack, localAudioTrack,
     toggleAudio, toggleVideo,
   }
 }

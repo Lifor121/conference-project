@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../api/client.js'
+import ThemeToggle from '../components/ThemeToggle.jsx'
 
 export default function HomePage() {
   const navigate = useNavigate()
@@ -23,7 +24,6 @@ export default function HomePage() {
   function joinMeeting() {
     const value = joinValue.trim()
     if (!value) return
-    // принимаем и голый uuid, и полную ссылку http://.../room/<uuid>
     const match = value.match(
       /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i,
     )
@@ -31,37 +31,54 @@ export default function HomePage() {
   }
 
   return (
-    <main className="home">
-      <div className="home-hero">
-        <h1>VC</h1>
-        <p>Открытые видеовстречи</p>
-      </div>
+    <div className="home-layout">
+      <header className="home-topbar">
+        <ThemeToggle />
+      </header>
 
-      <div className="home-cards">
-        <section className="card">
-          <h2>Новая встреча</h2>
-          <p>Создайте комнату и отправьте ссылку участникам</p>
-          <button className="primary" onClick={createMeeting} disabled={creating}>
-            {creating ? 'Создаём…' : 'Создать встречу'}
-          </button>
-        </section>
+      <main className="home">
+        <div className="home-hero">
+          <h1>VC</h1>
+          <p className="home-subtitle">Открытые видеовстречи</p>
+        </div>
 
-        <section className="card">
-          <h2>Присоединиться</h2>
-          <p>Вставьте ссылку на встречу или id комнаты</p>
-          <div className="join-row">
-            <input
-              value={joinValue}
-              onChange={(e) => setJoinValue(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && joinMeeting()}
-              placeholder="https://…/room/…"
-            />
-            <button onClick={joinMeeting}>Войти</button>
-          </div>
-        </section>
-      </div>
+        <div className="home-cards">
+          <section className="card">
+            <h2>Новая встреча</h2>
+            <p>Создайте комнату и отправьте ссылку участникам</p>
+            <button
+              className="primary"
+              onClick={createMeeting}
+              disabled={creating}
+            >
+              {creating ? 'Создаём…' : 'Создать встречу'}
+            </button>
+          </section>
 
-      {error && <div className="error">{error}</div>}
-    </main>
+          <section className="card">
+            <h2>Присоединиться</h2>
+            <p>Вставьте ссылку на встречу или id комнаты</p>
+            <div className="join-row">
+              <input
+                value={joinValue}
+                onChange={(e) => setJoinValue(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && joinMeeting()}
+                placeholder="https://…/room/…"
+                aria-label="Ссылка или ID комнаты"
+              />
+              <button
+                className="btn-join"
+                onClick={joinMeeting}
+                disabled={!joinValue.trim()}
+              >
+                Войти
+              </button>
+            </div>
+          </section>
+        </div>
+
+        {error && <div className="error-banner">{error}</div>}
+      </main>
+    </div>
   )
 }
