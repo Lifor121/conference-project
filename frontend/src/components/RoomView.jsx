@@ -14,7 +14,7 @@ import {
   UsersIcon,
 } from './icons.jsx'
 
-function VideoTile({ track, label, muted, fallbackInitial, detached, isLocal, speaking }) {
+function VideoTile({ track, label, muted, fallbackInitial, detached, isLocal, speaking, isScreen }) {
   const ref = useRef(null)
   const stream = useMemo(() => (track ? new MediaStream([track]) : null), [track])
 
@@ -24,7 +24,7 @@ function VideoTile({ track, label, muted, fallbackInitial, detached, isLocal, sp
 
   return (
     <div
-      className={`video-tile${detached ? ' detached' : ''}${isLocal ? ' is-local' : ''}${speaking ? ' is-speaking' : ''}`}
+      className={`video-tile${detached ? ' detached' : ''}${isLocal ? ' is-local' : ''}${speaking ? ' is-speaking' : ''}${isScreen ? ' is-screen-tile' : ''}`}
     >
       {stream ? (
         <video
@@ -32,7 +32,7 @@ function VideoTile({ track, label, muted, fallbackInitial, detached, isLocal, sp
           autoPlay
           playsInline
           muted={isLocal}
-          className="tile-video-element"
+          className={`tile-video-element${isScreen ? ' is-screen' : ''}`}
         />
       ) : (
         <div className="tile-avatar-wrapper">
@@ -97,6 +97,7 @@ function RemotePeerTiles({ peer }) {
           fallbackInitial="Э"
           isLocal={false}
           speaking={false}
+          isScreen={true}
         />
       )}
     </>
@@ -224,6 +225,7 @@ export default function RoomView({ session, onLeave }) {
               fallbackInitial="Э"
               isLocal={false}
               speaking={false}
+              isScreen={true}
             />
           )}
           {remotePeers.map((p) => (
