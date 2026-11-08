@@ -12,6 +12,7 @@ import {
   CopyIcon,
   CheckIcon,
   UsersIcon,
+  PlayIcon,
 } from './icons.jsx'
 
 function VideoTile({
@@ -26,6 +27,7 @@ function VideoTile({
   isFocused,
   isThumbnail,
   onClick,
+  children,
 }) {
   const ref = useRef(null)
   const stream = useMemo(() => (track ? new MediaStream([track]) : null), [track])
@@ -96,6 +98,8 @@ function VideoTile({
         </div>
       )}
 
+      {children}
+
       <div className="tile-info-badge">
         {muted && <MicOffIcon size={14} className="badge-muted-icon" />}
         <span className="badge-name">{label}</span>
@@ -142,7 +146,61 @@ function RemotePeerTile({ peer, isThumbnail, isFocused, onFocus }) {
   )
 }
 
-function RemoteScreenTile({ peer, isThumbnail, isFocused, onFocus }) {
+function RemoteScreenTile({
+  peer,
+  isThumbnail,
+  isFocused,
+  onFocus,
+  isWatching,
+  onWatch,
+  onStopWatch,
+}) {
+  if (!isWatching) {
+    return (
+      <div
+        className={`video-tile is-screen-tile stream-placeholder${isFocused ? ' is-focused' : ''}${isThumbnail ? ' is-thumbnail' : ''}`}
+        onClick={onFocus}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault()
+            onFocus()
+          }
+        }}
+        title="Нажмите, чтобы развернуть"
+      >
+        <div className="stream-placeholder-content">
+          <div className="stream-placeholder-icon-wrap">
+            <ScreenShareIcon size={isThumbnail ? 20 : 30} />
+            <span className="stream-live-badge">LIVE</span>
+          </div>
+          {!isThumbnail && (
+            <div className="stream-placeholder-text">
+              <span className="stream-placeholder-author">{peer.displayName}</span>
+              <span className="stream-placeholder-sub">ведёт трансляцию</span>
+            </div>
+          )}
+          <button
+            type="button"
+            className="stream-watch-btn"
+            onClick={(e) => {
+              e.stopPropagation()
+              onWatch()
+            }}
+          >
+            <PlayIcon size={12} />
+            <span>{isThumbnail ? 'Смотреть' : 'Смотреть стрим'}</span>
+          </button>
+        </div>
+        <div className="tile-info-badge">
+          <ScreenShareIcon size={13} className="badge-screen-icon" />
+          <span className="badge-name">{peer.displayName} · Экран</span>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <VideoTile
       track={peer.tracks['screen:video']}
@@ -154,7 +212,19 @@ function RemoteScreenTile({ peer, isThumbnail, isFocused, onFocus }) {
       isThumbnail={isThumbnail}
       isFocused={isFocused}
       onClick={onFocus}
-    />
+    >
+      <button
+        type="button"
+        className="stream-stop-watch-btn"
+        onClick={(e) => {
+          e.stopPropagation()
+          onStopWatch()
+        }}
+        title="Прекратить просмотр трансляции"
+      >
+        Прекратить просмотр
+      </button>
+    </VideoTile>
   )
 }
 
@@ -178,7 +248,25 @@ export default function RoomView({ session, onLeave }) {
   const joined = phase === 'joined'
   const [copied, setCopied] = useState(false)
   const [focusedTileId, setFocusedTileId] = useState(null)
+  const [watchedStreams, setWatchedStreams] = useState(() => new Set())
   const localSpeaking = useAudioActivity(localAudioTrack, audioEnabled)
+
+  // Удаляем из watchedStreams стримы, показ которых завершился
+  useEffect(() => {
+    setWatchedStreams((prev) => {
+      let changed = false
+      const next = new Set(prev)
+      for (const id of next) {
+        const peerId = id.slice(0, -7)
+        const peer = remotePeers.find((p) => p.id === peerId)
+        if (!peer || !peer.tracks['screen:video']) {
+          next.delete(id)
+          changed = true
+        }
+      }
+      return changed ? next : prev
+    })
+  }, [remotePeers])
 
   const [showReconnectOverlay, setShowReconnectOverlay] = useState(false)
   useEffect(() => {
@@ -253,12 +341,22 @@ export default function RoomView({ session, onLeave }) {
       const peerId = id.slice(0, -7)
       const peer = remotePeers.find((p) => p.id === peerId)
       if (!peer || !peer.tracks['screen:video']) return null
+      const isWatching = watchedStreams.has(id)
       return (
         <RemoteScreenTile
           key={id}
           peer={peer}
           isThumbnail={isThumbnail}
           isFocused={isFocused}
+          isWatching={isWatching}
+          onWatch={() => setWatchedStreams((prev) => new Set([...prev, id]))}
+          onStopWatch={() =>
+            setWatchedStreams((prev) => {
+              const next = new Set(prev)
+              next.delete(id)
+              return next
+            })
+          }
           onFocus={handleToggle}
         />
       )
@@ -378,6 +476,15 @@ export default function RoomView({ session, onLeave }) {
       {remotePeers.map((p) => (
         <AudioSink key={p.id} track={p.tracks['webcam:audio']} />
       ))}
+
+      {/* Аудио потоки демонстраций экранов (только для просматриваемых) */}
+      {remotePeers.map((p) => {
+        const screenAudio = p.tracks['screen:audio']
+        if (!screenAudio) return null
+        const streamId = `${p.id}-screen`
+        if (!watchedStreams.has(streamId)) return null
+        return <AudioSink key={streamId} track={screenAudio} />
+      })}
 
       {/* Фиксированная нижняя панель управления */}
       <footer className="room-bottom-dock">
