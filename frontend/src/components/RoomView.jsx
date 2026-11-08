@@ -13,12 +13,17 @@ import {
   CheckIcon,
   UsersIcon,
   PlayIcon,
+  VolumeIcon,
+  VolumeOffIcon,
+  MaximizeIcon,
+  MinimizeIcon,
 } from './icons.jsx'
 
 function VideoTile({
   track,
   label,
   muted,
+  userMuted,
   fallbackInitial,
   detached,
   isLocal,
@@ -27,6 +32,7 @@ function VideoTile({
   isFocused,
   isThumbnail,
   onClick,
+  onContextMenu,
   children,
 }) {
   const ref = useRef(null)
@@ -62,6 +68,7 @@ function VideoTile({
     <div
       className={`video-tile${stream ? ' has-video' : ' no-video'}${detached ? ' detached' : ''}${isLocal ? ' is-local' : ''}${speaking ? ' is-speaking' : ''}${isScreen ? ' is-screen-tile' : ''}${isFocused ? ' is-focused' : ''}${isThumbnail ? ' is-thumbnail' : ''}`}
       onClick={onClick}
+      onContextMenu={onContextMenu}
       role={onClick ? 'button' : undefined}
       tabIndex={onClick ? 0 : undefined}
       onKeyDown={(e) => {
@@ -102,13 +109,20 @@ function VideoTile({
 
       <div className="tile-info-badge">
         {muted && <MicOffIcon size={14} className="badge-muted-icon" />}
+        {userMuted && (
+          <VolumeOffIcon
+            size={14}
+            className="badge-user-muted-icon"
+            title="Вы заглушили этот звук"
+          />
+        )}
         <span className="badge-name">{label}</span>
       </div>
     </div>
   )
 }
 
-function AudioSink({ track }) {
+function AudioSink({ track, volume = 100, muted = false }) {
   const ref = useRef(null)
   useEffect(() => {
     const el = ref.current
@@ -122,11 +136,26 @@ function AudioSink({ track }) {
       el.srcObject = null
     }
   }, [track])
+
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    el.volume = Math.max(0, Math.min(1, volume / 100))
+    el.muted = Boolean(muted)
+  }, [volume, muted])
+
   if (!track) return null
   return <audio ref={ref} autoPlay />
 }
 
-function RemotePeerTile({ peer, isThumbnail, isFocused, onFocus }) {
+function RemotePeerTile({
+  peer,
+  isThumbnail,
+  isFocused,
+  onFocus,
+  onContextMenu,
+  userMuted,
+}) {
   const audioTrack = peer.tracks['webcam:audio']
   const isSpeaking = useAudioActivity(audioTrack, Boolean(audioTrack))
 
@@ -134,6 +163,7 @@ function RemotePeerTile({ peer, isThumbnail, isFocused, onFocus }) {
     <VideoTile
       track={peer.tracks['webcam:video']}
       muted={!audioTrack}
+      userMuted={userMuted}
       label={peer.displayName}
       fallbackInitial={(peer.displayName || '?')[0].toUpperCase()}
       detached={Boolean(peer.detached)}
@@ -142,6 +172,7 @@ function RemotePeerTile({ peer, isThumbnail, isFocused, onFocus }) {
       isThumbnail={isThumbnail}
       isFocused={isFocused}
       onClick={onFocus}
+      onContextMenu={onContextMenu}
     />
   )
 }
@@ -154,12 +185,15 @@ function RemoteScreenTile({
   isWatching,
   onWatch,
   onStopWatch,
+  onContextMenu,
+  userMuted,
 }) {
   if (!isWatching) {
     return (
       <div
         className={`video-tile is-screen-tile stream-placeholder${isFocused ? ' is-focused' : ''}${isThumbnail ? ' is-thumbnail' : ''}`}
         onClick={onFocus}
+        onContextMenu={onContextMenu}
         role="button"
         tabIndex={0}
         onKeyDown={(e) => {
@@ -195,6 +229,13 @@ function RemoteScreenTile({
         </div>
         <div className="tile-info-badge">
           <ScreenShareIcon size={13} className="badge-screen-icon" />
+          {userMuted && (
+            <VolumeOffIcon
+              size={14}
+              className="badge-user-muted-icon"
+              title="Вы заглушили этот стрим"
+            />
+          )}
           <span className="badge-name">{peer.displayName} · Экран</span>
         </div>
       </div>
@@ -211,7 +252,9 @@ function RemoteScreenTile({
       isScreen={true}
       isThumbnail={isThumbnail}
       isFocused={isFocused}
+      userMuted={userMuted}
       onClick={onFocus}
+      onContextMenu={onContextMenu}
     >
       <button
         type="button"
@@ -225,6 +268,176 @@ function RemoteScreenTile({
         Прекратить просмотр
       </button>
     </VideoTile>
+  )
+}
+
+function TileContextMenu({
+  menu,
+  onClose,
+  volume,
+  isMuted,
+  onVolumeChange,
+  onToggleMute,
+  isFocused,
+  onToggleFocus,
+  isWatching,
+  onWatch,
+  onStopWatch,
+  audioEnabled,
+  videoEnabled,
+  toggleAudio,
+  toggleVideo,
+}) {
+  const menuRef = useRef(null)
+
+  useEffect(() => {
+    function handlePointerDown(e) {
+      if (menuRef.current && !menuRef.current.contains(e.target)) {
+        onClose()
+      }
+    }
+    function handleKeyDown(e) {
+      if (e.key === 'Escape') onClose()
+    }
+    function handleScrollOrResize() {
+      onClose()
+    }
+
+    window.addEventListener('pointerdown', handlePointerDown)
+    window.addEventListener('keydown', handleKeyDown)
+    window.addEventListener('resize', handleScrollOrResize)
+    window.addEventListener('scroll', handleScrollOrResize, true)
+
+    return () => {
+      window.removeEventListener('pointerdown', handlePointerDown)
+      window.removeEventListener('keydown', handleKeyDown)
+      window.removeEventListener('resize', handleScrollOrResize)
+      window.removeEventListener('scroll', handleScrollOrResize, true)
+    }
+  }, [onClose])
+
+  if (!menu) return null
+
+  const isLocal = menu.type === 'me'
+  const isLocalScreen = menu.type === 'screen-local'
+
+  return (
+    <div
+      ref={menuRef}
+      className="tile-context-menu"
+      style={{ left: `${menu.x}px`, top: `${menu.y}px` }}
+      onClick={(e) => e.stopPropagation()}
+    >
+      <div className="menu-header">
+        <span className="menu-header-name" title={menu.label}>
+          {menu.label}
+        </span>
+        {isMuted && <span className="menu-muted-tag">Заглушен</span>}
+      </div>
+
+      <div className="menu-divider" />
+
+      {isLocal ? (
+        <div className="menu-actions">
+          <button
+            type="button"
+            className="menu-item-btn"
+            onClick={() => {
+              toggleAudio()
+              onClose()
+            }}
+          >
+            {audioEnabled ? <MicOffIcon size={16} /> : <MicIcon size={16} />}
+            <span>{audioEnabled ? 'Выключить микрофон' : 'Включить микрофон'}</span>
+          </button>
+          <button
+            type="button"
+            className="menu-item-btn"
+            onClick={() => {
+              toggleVideo()
+              onClose()
+            }}
+          >
+            {videoEnabled ? <VideoOffIcon size={16} /> : <VideoIcon size={16} />}
+            <span>{videoEnabled ? 'Выключить камеру' : 'Включить камеру'}</span>
+          </button>
+        </div>
+      ) : isLocalScreen ? null : (
+        <>
+          <div className="menu-volume-section">
+            <div className="menu-volume-header">
+              <span className="menu-section-label">Громкость</span>
+              <span className="menu-volume-value">{isMuted ? '0%' : `${volume}%`}</span>
+            </div>
+            <div className="menu-slider-row">
+              <input
+                type="range"
+                min="0"
+                max="100"
+                value={isMuted ? 0 : volume}
+                onChange={(e) => onVolumeChange(Number(e.target.value))}
+                className="menu-volume-slider"
+              />
+            </div>
+          </div>
+
+          <div className="menu-actions">
+            <button
+              type="button"
+              className={`menu-item-btn${isMuted ? ' active-danger' : ''}`}
+              onClick={() => onToggleMute()}
+            >
+              {isMuted ? <VolumeIcon size={16} /> : <VolumeOffIcon size={16} />}
+              <span>{isMuted ? 'Включить звук' : 'Заглушить'}</span>
+            </button>
+
+            {menu.type === 'remote-screen' && (
+              isWatching ? (
+                <button
+                  type="button"
+                  className="menu-item-btn danger-text"
+                  onClick={() => {
+                    onStopWatch()
+                    onClose()
+                  }}
+                >
+                  <ScreenShareIcon size={16} />
+                  <span>Прекратить просмотр</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="menu-item-btn accent-text"
+                  onClick={() => {
+                    onWatch()
+                    onClose()
+                  }}
+                >
+                  <PlayIcon size={16} />
+                  <span>Смотреть стрим</span>
+                </button>
+              )
+            )}
+          </div>
+        </>
+      )}
+
+      <div className="menu-divider" />
+
+      <div className="menu-actions">
+        <button
+          type="button"
+          className="menu-item-btn"
+          onClick={() => {
+            onToggleFocus()
+            onClose()
+          }}
+        >
+          {isFocused ? <MinimizeIcon size={16} /> : <MaximizeIcon size={16} />}
+          <span>{isFocused ? 'Свернуть плитку' : 'Развернуть плитку'}</span>
+        </button>
+      </div>
+    </div>
   )
 }
 
@@ -249,7 +462,37 @@ export default function RoomView({ session, onLeave }) {
   const [copied, setCopied] = useState(false)
   const [focusedTileId, setFocusedTileId] = useState(null)
   const [watchedStreams, setWatchedStreams] = useState(() => new Set())
+  const [contextMenu, setContextMenu] = useState(null)
+  const [volumeMap, setVolumeMap] = useState({})
+  const [mutedMap, setMutedMap] = useState({})
   const localSpeaking = useAudioActivity(localAudioTrack, audioEnabled)
+
+  const getVolume = useCallback(
+    (id) => (volumeMap[id] !== undefined ? volumeMap[id] : 100),
+    [volumeMap],
+  )
+  const isMuted = useCallback((id) => Boolean(mutedMap[id]), [mutedMap])
+
+  const setVolume = useCallback((id, val) => {
+    setVolumeMap((prev) => ({ ...prev, [id]: val }))
+    if (val > 0) {
+      setMutedMap((prev) => (prev[id] ? { ...prev, [id]: false } : prev))
+    }
+  }, [])
+
+  const toggleMute = useCallback((id) => {
+    setMutedMap((prev) => ({ ...prev, [id]: !prev[id] }))
+  }, [])
+
+  const handleContextMenu = useCallback((e, targetInfo) => {
+    e.preventDefault()
+    e.stopPropagation()
+    const menuWidth = 240
+    const menuHeight = 220
+    const x = Math.max(12, Math.min(window.innerWidth - menuWidth - 12, e.clientX || 12))
+    const y = Math.max(12, Math.min(window.innerHeight - menuHeight - 12, e.clientY || 12))
+    setContextMenu({ x, y, ...targetInfo })
+  }, [])
 
   // Удаляем из watchedStreams стримы, показ которых завершился
   useEffect(() => {
@@ -316,6 +559,13 @@ export default function RoomView({ session, onLeave }) {
           isThumbnail={isThumbnail}
           isFocused={isFocused}
           onClick={handleToggle}
+          onContextMenu={(e) =>
+            handleContextMenu(e, {
+              id: 'me',
+              type: 'me',
+              label: `${session.displayName} (Вы)`,
+            })
+          }
         />
       )
     }
@@ -333,6 +583,13 @@ export default function RoomView({ session, onLeave }) {
           isThumbnail={isThumbnail}
           isFocused={isFocused}
           onClick={handleToggle}
+          onContextMenu={(e) =>
+            handleContextMenu(e, {
+              id: 'screen-local',
+              type: 'screen-local',
+              label: `${session.displayName} · Экран (Вы)`,
+            })
+          }
         />
       )
     }
@@ -349,6 +606,7 @@ export default function RoomView({ session, onLeave }) {
           isThumbnail={isThumbnail}
           isFocused={isFocused}
           isWatching={isWatching}
+          userMuted={isMuted(id)}
           onWatch={() => setWatchedStreams((prev) => new Set([...prev, id]))}
           onStopWatch={() =>
             setWatchedStreams((prev) => {
@@ -358,6 +616,14 @@ export default function RoomView({ session, onLeave }) {
             })
           }
           onFocus={handleToggle}
+          onContextMenu={(e) =>
+            handleContextMenu(e, {
+              id,
+              peerId,
+              type: 'remote-screen',
+              label: `${peer.displayName} · Экран`,
+            })
+          }
         />
       )
     }
@@ -370,7 +636,15 @@ export default function RoomView({ session, onLeave }) {
         peer={peer}
         isThumbnail={isThumbnail}
         isFocused={isFocused}
+        userMuted={isMuted(id)}
         onFocus={handleToggle}
+        onContextMenu={(e) =>
+          handleContextMenu(e, {
+            id,
+            type: 'remote-peer',
+            label: peer.displayName,
+          })
+        }
       />
     )
   }
@@ -474,7 +748,12 @@ export default function RoomView({ session, onLeave }) {
 
       {/* Аудио потоки участников */}
       {remotePeers.map((p) => (
-        <AudioSink key={p.id} track={p.tracks['webcam:audio']} />
+        <AudioSink
+          key={p.id}
+          track={p.tracks['webcam:audio']}
+          volume={getVolume(p.id)}
+          muted={isMuted(p.id)}
+        />
       ))}
 
       {/* Аудио потоки демонстраций экранов (только для просматриваемых) */}
@@ -483,7 +762,14 @@ export default function RoomView({ session, onLeave }) {
         if (!screenAudio) return null
         const streamId = `${p.id}-screen`
         if (!watchedStreams.has(streamId)) return null
-        return <AudioSink key={streamId} track={screenAudio} />
+        return (
+          <AudioSink
+            key={streamId}
+            track={screenAudio}
+            volume={getVolume(streamId)}
+            muted={isMuted(streamId)}
+          />
+        )
       })}
 
       {/* Фиксированная нижняя панель управления */}
@@ -531,6 +817,35 @@ export default function RoomView({ session, onLeave }) {
           </button>
         </div>
       </footer>
+
+      {/* Контекстное меню по ПКМ */}
+      {contextMenu && (
+        <TileContextMenu
+          menu={contextMenu}
+          onClose={() => setContextMenu(null)}
+          volume={getVolume(contextMenu.id)}
+          isMuted={isMuted(contextMenu.id)}
+          onVolumeChange={(val) => setVolume(contextMenu.id, val)}
+          onToggleMute={() => toggleMute(contextMenu.id)}
+          isFocused={activeFocusedId === contextMenu.id}
+          onToggleFocus={() => {
+            setFocusedTileId((prev) => (prev === contextMenu.id ? null : contextMenu.id))
+          }}
+          isWatching={watchedStreams.has(contextMenu.id)}
+          onWatch={() => setWatchedStreams((prev) => new Set([...prev, contextMenu.id]))}
+          onStopWatch={() =>
+            setWatchedStreams((prev) => {
+              const next = new Set(prev)
+              next.delete(contextMenu.id)
+              return next
+            })
+          }
+          audioEnabled={audioEnabled}
+          videoEnabled={videoEnabled}
+          toggleAudio={toggleAudio}
+          toggleVideo={toggleVideo}
+        />
+      )}
     </div>
   )
 }
