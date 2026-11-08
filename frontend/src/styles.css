@@ -918,6 +918,19 @@ label {
   max-height: 100%;
 }
 
+.video-tile.is-focused.no-video {
+  width: min(100%, calc((100vh - 220px) * 16 / 9), 920px);
+  aspect-ratio: 16 / 9;
+  background: var(--tile-bg);
+  min-height: 240px;
+}
+
+.video-tile.is-focused.no-video .tile-avatar-circle {
+  width: 96px;
+  height: 96px;
+  font-size: 38px;
+}
+
 .video-tile.is-focused .tile-video-element {
   width: 100%;
   height: 100%;
@@ -1354,6 +1367,20 @@ label {
     width: auto;
     height: auto;
     margin: auto;
+  }
+
+  .video-tile.is-focused.no-video {
+    width: 100%;
+    max-width: 100%;
+    aspect-ratio: 16 / 9;
+    min-height: 200px;
+    height: auto;
+  }
+
+  .video-tile.is-focused.no-video .tile-avatar-circle {
+    width: 80px;
+    height: 80px;
+    font-size: 32px;
   }
 
   .video-tile.is-focused .tile-video-element {
