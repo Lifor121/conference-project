@@ -388,6 +388,8 @@ function TileContextMenu({
 
   const isLocal = menu.type === 'me'
   const isLocalScreen = menu.type === 'screen-local'
+  const currentVolume = isMuted ? 0 : volume
+  const fillStop = `calc(${currentVolume}% + ${(0.5 - currentVolume / 100) * 16}px)`
 
   return (
     <div
@@ -434,18 +436,18 @@ function TileContextMenu({
           <div className="menu-volume-section">
             <div className="menu-volume-header">
               <span className="menu-section-label">Громкость</span>
-              <span className="menu-volume-value">{isMuted ? '0%' : `${volume}%`}</span>
+              <span className="menu-volume-value">{currentVolume}%</span>
             </div>
             <div className="menu-slider-row">
               <input
                 type="range"
                 min="0"
                 max="100"
-                value={isMuted ? 0 : volume}
+                value={currentVolume}
                 onChange={(e) => onVolumeChange(Number(e.target.value))}
                 className="menu-volume-slider"
                 style={{
-                  background: `linear-gradient(to right, var(--accent) 0%, var(--accent) ${isMuted ? 0 : volume}%, var(--border) ${isMuted ? 0 : volume}%, var(--border) 100%)`,
+                  background: `linear-gradient(to right, var(--accent) 0%, var(--accent) ${fillStop}, var(--border) ${fillStop}, var(--border) 100%)`,
                 }}
               />
             </div>

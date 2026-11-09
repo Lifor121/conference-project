@@ -33,7 +33,14 @@ export default function PreJoinScreen({ roomId, onJoin }) {
     try {
       const constraints =
         kind === 'audio'
-          ? { audio: deviceId ? { deviceId: { exact: deviceId } } : true }
+          ? {
+              audio: {
+                echoCancellation: true,
+                noiseSuppression: true,
+                autoGainControl: true,
+                ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
+              },
+            }
           : { video: deviceId ? { deviceId: { exact: deviceId } } : true }
       const stream = await navigator.mediaDevices.getUserMedia(constraints)
       const track = stream.getTracks()[0]

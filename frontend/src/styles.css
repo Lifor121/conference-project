@@ -1493,14 +1493,12 @@ label {
 .menu-volume-slider::-moz-range-track {
   height: 8px;
   border-radius: 9999px;
-  background: var(--border);
+  background: transparent;
   border: none;
 }
 
 .menu-volume-slider::-moz-range-progress {
-  height: 8px;
-  border-radius: 9999px;
-  background: var(--accent);
+  background: transparent;
 }
 
 .menu-volume-slider::-moz-range-thumb {

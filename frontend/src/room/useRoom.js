@@ -146,7 +146,12 @@ export function useRoom({ session }) {
     try {
       if (!producer) {
         const stream = await navigator.mediaDevices.getUserMedia({
-          audio: { deviceId: session.devices?.micId || undefined },
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+            ...(session.devices?.micId ? { deviceId: { exact: session.devices.micId } } : {}),
+          },
         })
         const track = stream.getAudioTracks()[0]
         if (!track) throw new Error('Микрофон не найден')

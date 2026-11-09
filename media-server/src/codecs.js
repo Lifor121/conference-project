@@ -6,6 +6,10 @@ const mediaCodecs = [
     mimeType: 'audio/opus',
     clockRate: 48000,
     channels: 2,
+    parameters: {
+      useinbandfec: 1,
+      usedtx: 1,
+    },
   },
   {
     kind: 'video',
