@@ -68,6 +68,16 @@ export const ScreenShareIcon = ({ className, size }) => (
   </Icon>
 )
 
+export const ScreenShareOffIcon = ({ className, size }) => (
+  <Icon className={className} size={size}>
+    <path d="M13 3H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-3" />
+    <path d="M8 21h8" />
+    <path d="M12 17v4" />
+    <line x1="22" x2="16" y1="3" y2="9" />
+    <line x1="16" x2="22" y1="3" y2="9" />
+  </Icon>
+)
+
 export const CopyIcon = ({ className, size }) => (
   <Icon className={className} size={size}>
     <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />

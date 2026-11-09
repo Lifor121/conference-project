@@ -9,6 +9,7 @@ import {
   VideoIcon,
   VideoOffIcon,
   ScreenShareIcon,
+  ScreenShareOffIcon,
   CopyIcon,
   CheckIcon,
   UsersIcon,
@@ -18,6 +19,58 @@ import {
   MaximizeIcon,
   MinimizeIcon,
 } from './icons.jsx'
+
+function SpotlightStage({ children, aspectRatio }) {
+  const stageRef = useRef(null)
+  const [stageBounds, setStageBounds] = useState({ width: 0, height: 0 })
+
+  useEffect(() => {
+    const el = stageRef.current
+    if (!el) return
+    const update = () => {
+      const rect = el.getBoundingClientRect()
+      setStageBounds({ width: rect.width, height: rect.height })
+    }
+    update()
+    const ro = new ResizeObserver(update)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+
+  const fittedStyle = useMemo(() => {
+    if (!stageBounds.width || !stageBounds.height) return undefined
+    const padX = 16
+    const padY = 16
+    const maxW = Math.max(100, stageBounds.width - padX)
+    const maxH = Math.max(100, stageBounds.height - padY)
+
+    let ratio = 16 / 9
+    if (aspectRatio && typeof aspectRatio === 'string' && aspectRatio.includes('/')) {
+      const [w, h] = aspectRatio.split('/').map(Number)
+      if (w > 0 && h > 0) ratio = w / h
+    }
+
+    let width = maxW
+    let height = width / ratio
+
+    if (height > maxH) {
+      height = maxH
+      width = height * ratio
+    }
+
+    return {
+      width: `${Math.round(width)}px`,
+      height: `${Math.round(height)}px`,
+      aspectRatio: `${ratio}`,
+    }
+  }, [stageBounds, aspectRatio])
+
+  return (
+    <div className="spotlight-stage" ref={stageRef}>
+      {children(fittedStyle)}
+    </div>
+  )
+}
 
 function VideoTile({
   track,
@@ -33,6 +86,8 @@ function VideoTile({
   isThumbnail,
   onClick,
   onContextMenu,
+  fittedStyle,
+  onAspectRatioChange,
   children,
 }) {
   const ref = useRef(null)
@@ -46,9 +101,11 @@ function VideoTile({
   const updateAspectRatio = useCallback(() => {
     const el = ref.current
     if (el && el.videoWidth > 0 && el.videoHeight > 0) {
-      setAspectRatio(`${el.videoWidth} / ${el.videoHeight}`)
+      const ratio = `${el.videoWidth} / ${el.videoHeight}`
+      setAspectRatio(ratio)
+      onAspectRatioChange?.(ratio)
     }
-  }, [])
+  }, [onAspectRatioChange])
 
   useEffect(() => {
     const el = ref.current
@@ -62,7 +119,9 @@ function VideoTile({
     }
   }, [stream, updateAspectRatio])
 
-  const dynamicStyle = isFocused && aspectRatio ? { aspectRatio } : undefined
+  const dynamicStyle = isFocused
+    ? fittedStyle || (aspectRatio ? { aspectRatio } : undefined)
+    : undefined
 
   return (
     <div
@@ -155,6 +214,8 @@ function RemotePeerTile({
   onFocus,
   onContextMenu,
   userMuted,
+  fittedStyle,
+  onAspectRatioChange,
 }) {
   const audioTrack = peer.tracks['webcam:audio']
   const isSpeaking = useAudioActivity(audioTrack, Boolean(audioTrack))
@@ -173,6 +234,8 @@ function RemotePeerTile({
       isFocused={isFocused}
       onClick={onFocus}
       onContextMenu={onContextMenu}
+      fittedStyle={fittedStyle}
+      onAspectRatioChange={onAspectRatioChange}
     />
   )
 }
@@ -187,6 +250,8 @@ function RemoteScreenTile({
   onStopWatch,
   onContextMenu,
   userMuted,
+  fittedStyle,
+  onAspectRatioChange,
 }) {
   if (!isWatching) {
     return (
@@ -203,6 +268,7 @@ function RemoteScreenTile({
           }
         }}
         title="Нажмите, чтобы развернуть"
+        style={isFocused ? fittedStyle : undefined}
       >
         <div className="stream-placeholder-content">
           <div className="stream-placeholder-icon-wrap">
@@ -255,6 +321,8 @@ function RemoteScreenTile({
       userMuted={userMuted}
       onClick={onFocus}
       onContextMenu={onContextMenu}
+      fittedStyle={fittedStyle}
+      onAspectRatioChange={onAspectRatioChange}
     >
       <button
         type="button"
@@ -332,7 +400,6 @@ function TileContextMenu({
         <span className="menu-header-name" title={menu.label}>
           {menu.label}
         </span>
-        {isMuted && <span className="menu-muted-tag">Заглушен</span>}
       </div>
 
       <div className="menu-divider" />
@@ -377,6 +444,9 @@ function TileContextMenu({
                 value={isMuted ? 0 : volume}
                 onChange={(e) => onVolumeChange(Number(e.target.value))}
                 className="menu-volume-slider"
+                style={{
+                  background: `linear-gradient(to right, var(--accent) 0%, var(--accent) ${isMuted ? 0 : volume}%, var(--border) ${isMuted ? 0 : volume}%, var(--border) 100%)`,
+                }}
               />
             </div>
           </div>
@@ -434,7 +504,7 @@ function TileContextMenu({
           }}
         >
           {isFocused ? <MinimizeIcon size={16} /> : <MaximizeIcon size={16} />}
-          <span>{isFocused ? 'Свернуть плитку' : 'Развернуть плитку'}</span>
+          <span>{isFocused ? 'Свернуть' : 'Развернуть'}</span>
         </button>
       </div>
     </div>
@@ -461,11 +531,16 @@ export default function RoomView({ session, onLeave }) {
   const joined = phase === 'joined'
   const [copied, setCopied] = useState(false)
   const [focusedTileId, setFocusedTileId] = useState(null)
+  const [focusedAspectRatio, setFocusedAspectRatio] = useState(null)
   const [watchedStreams, setWatchedStreams] = useState(() => new Set())
   const [contextMenu, setContextMenu] = useState(null)
   const [volumeMap, setVolumeMap] = useState({})
   const [mutedMap, setMutedMap] = useState({})
   const localSpeaking = useAudioActivity(localAudioTrack, audioEnabled)
+
+  useEffect(() => {
+    setFocusedAspectRatio(null)
+  }, [focusedTileId])
 
   const getVolume = useCallback(
     (id) => (volumeMap[id] !== undefined ? volumeMap[id] : 100),
@@ -541,7 +616,7 @@ export default function RoomView({ session, onLeave }) {
 
   const totalTiles = tileIds.length
 
-  function renderTile(id, { isThumbnail, isFocused }) {
+  function renderTile(id, { isThumbnail, isFocused, fittedStyle }) {
     const handleToggle = () => {
       setFocusedTileId((prev) => (prev === id ? null : id))
     }
@@ -558,6 +633,8 @@ export default function RoomView({ session, onLeave }) {
           speaking={localSpeaking}
           isThumbnail={isThumbnail}
           isFocused={isFocused}
+          fittedStyle={fittedStyle}
+          onAspectRatioChange={isFocused ? setFocusedAspectRatio : undefined}
           onClick={handleToggle}
           onContextMenu={(e) =>
             handleContextMenu(e, {
@@ -582,6 +659,8 @@ export default function RoomView({ session, onLeave }) {
           isScreen={true}
           isThumbnail={isThumbnail}
           isFocused={isFocused}
+          fittedStyle={fittedStyle}
+          onAspectRatioChange={isFocused ? setFocusedAspectRatio : undefined}
           onClick={handleToggle}
           onContextMenu={(e) =>
             handleContextMenu(e, {
@@ -607,6 +686,8 @@ export default function RoomView({ session, onLeave }) {
           isFocused={isFocused}
           isWatching={isWatching}
           userMuted={isMuted(id)}
+          fittedStyle={fittedStyle}
+          onAspectRatioChange={isFocused ? setFocusedAspectRatio : undefined}
           onWatch={() => setWatchedStreams((prev) => new Set([...prev, id]))}
           onStopWatch={() =>
             setWatchedStreams((prev) => {
@@ -637,6 +718,8 @@ export default function RoomView({ session, onLeave }) {
         isThumbnail={isThumbnail}
         isFocused={isFocused}
         userMuted={isMuted(id)}
+        fittedStyle={fittedStyle}
+        onAspectRatioChange={isFocused ? setFocusedAspectRatio : undefined}
         onFocus={handleToggle}
         onContextMenu={(e) =>
           handleContextMenu(e, {
@@ -715,9 +798,15 @@ export default function RoomView({ session, onLeave }) {
                 .filter((id) => id !== activeFocusedId)
                 .map((id) => renderTile(id, { isThumbnail: true, isFocused: false }))}
             </div>
-            <div className="spotlight-stage">
-              {renderTile(activeFocusedId, { isThumbnail: false, isFocused: true })}
-            </div>
+            <SpotlightStage aspectRatio={focusedAspectRatio}>
+              {(fittedStyle) =>
+                renderTile(activeFocusedId, {
+                  isThumbnail: false,
+                  isFocused: true,
+                  fittedStyle,
+                })
+              }
+            </SpotlightStage>
           </div>
         ) : (
           <div className="video-grid" data-count={totalTiles}>
@@ -798,12 +887,12 @@ export default function RoomView({ session, onLeave }) {
           {supportsScreenShare && (
             <button
               type="button"
-              className={`dock-btn ${screenEnabled ? 'active' : 'secondary'}`}
+              className={`dock-btn ${screenEnabled ? 'screen-active' : 'secondary'}`}
               onClick={toggleScreenShare}
               disabled={!joined}
               title={screenEnabled ? 'Остановить демонстрацию' : 'Демонстрация экрана'}
             >
-              <ScreenShareIcon size={22} />
+              {screenEnabled ? <ScreenShareOffIcon size={22} /> : <ScreenShareIcon size={22} />}
             </button>
           )}
 

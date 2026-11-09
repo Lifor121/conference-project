@@ -904,7 +904,7 @@ label {
   aspect-ratio: 16 / 9;
   border-radius: var(--radius-lg);
   overflow: hidden;
-  background: #000000;
+  background: var(--tile-bg);
   border: 1px solid var(--border);
   box-shadow: 0 4px 24px rgba(0, 0, 0, 0.24);
   display: flex;
@@ -1095,7 +1095,7 @@ label {
   width: 100%;
   height: 100%;
   object-fit: contain;
-  background: #000000;
+  background: transparent;
 }
 
 .tile-video-element {
@@ -1108,7 +1108,7 @@ label {
 
 .tile-video-element.is-screen {
   object-fit: contain;
-  background: #000000;
+  background: transparent;
 }
 
 .video-tile.is-local .tile-video-element {
@@ -1256,6 +1256,18 @@ label {
   background: var(--surface-raised);
 }
 
+.dock-btn.screen-active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #ffffff;
+  box-shadow: 0 0 16px rgba(99, 102, 241, 0.45);
+}
+
+.dock-btn.screen-active:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
 .dock-btn.leave-action {
   background: var(--danger);
   border-color: var(--danger);
@@ -1401,16 +1413,6 @@ label {
   white-space: nowrap;
 }
 
-.menu-muted-tag {
-  font-size: 10px;
-  font-weight: 500;
-  background: var(--danger-subtle);
-  color: var(--danger);
-  padding: 1px 6px;
-  border-radius: 4px;
-  white-space: nowrap;
-}
-
 .menu-divider {
   height: 1px;
   background: var(--border);
@@ -1451,30 +1453,70 @@ label {
 
 .menu-volume-slider {
   width: 100%;
-  height: 6px;
+  height: 8px;
   -webkit-appearance: none;
   appearance: none;
-  background: var(--surface);
-  border-radius: 3px;
+  background: var(--border);
+  border-radius: 9999px;
   outline: none;
   cursor: pointer;
-  accent-color: var(--accent);
+  margin: 4px 0;
+  transition: background var(--transition-fast);
+}
+
+.menu-volume-slider::-webkit-slider-runnable-track {
+  height: 8px;
+  border-radius: 9999px;
+  background: transparent;
+  border: none;
 }
 
 .menu-volume-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
   border-radius: 50%;
   background: var(--accent);
+  border: 2px solid var(--surface-raised);
   cursor: pointer;
+  margin-top: -4px;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
-  transition: transform var(--transition-fast);
+  transition: transform var(--transition-fast), background var(--transition-fast);
 }
 
 .menu-volume-slider::-webkit-slider-thumb:hover {
   transform: scale(1.15);
+  background: var(--accent-hover);
+}
+
+.menu-volume-slider::-moz-range-track {
+  height: 8px;
+  border-radius: 9999px;
+  background: var(--border);
+  border: none;
+}
+
+.menu-volume-slider::-moz-range-progress {
+  height: 8px;
+  border-radius: 9999px;
+  background: var(--accent);
+}
+
+.menu-volume-slider::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--surface-raised);
+  cursor: pointer;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+  transition: transform var(--transition-fast), background var(--transition-fast);
+}
+
+.menu-volume-slider::-moz-range-thumb:hover {
+  transform: scale(1.15);
+  background: var(--accent-hover);
 }
 
 .menu-actions {
@@ -1722,7 +1764,7 @@ label {
     width: 100%;
     height: 100%;
     object-fit: contain;
-    background: #000000;
+    background: transparent;
   }
 
   /* Нижняя панель с учётом safe area */
