@@ -183,6 +183,10 @@ function VideoTile({
 
 function AudioSink({ track, volume = 100, muted = false }) {
   const ref = useRef(null)
+  const ctxRef = useRef(null)
+  const sourceRef = useRef(null)
+  const gainRef = useRef(null)
+
   useEffect(() => {
     const el = ref.current
     if (!el || !track) return
@@ -193,15 +197,62 @@ function AudioSink({ track, volume = 100, muted = false }) {
     })
     return () => {
       el.srcObject = null
+      if (sourceRef.current) {
+        try { sourceRef.current.disconnect() } catch {}
+        sourceRef.current = null
+      }
+      if (gainRef.current) {
+        try { gainRef.current.disconnect() } catch {}
+        gainRef.current = null
+      }
+      if (ctxRef.current) {
+        ctxRef.current.close().catch(() => {})
+        ctxRef.current = null
+      }
     }
   }, [track])
 
   useEffect(() => {
     const el = ref.current
     if (!el) return
-    el.volume = Math.max(0, Math.min(1, volume / 100))
-    el.muted = Boolean(muted)
-  }, [volume, muted])
+    const isMuted = Boolean(muted)
+
+    if (volume <= 100 && !ctxRef.current) {
+      // Обычная громкость (0–100%) — управляем напрямую через HTML-элемент
+      el.volume = Math.max(0, Math.min(1, volume / 100))
+      el.muted = isMuted
+      return
+    }
+
+    // Если потребовалось усиление (>100%), инициализируем Web Audio API (GainNode)
+    if (!ctxRef.current && track) {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext
+      if (AudioCtx) {
+        const ctx = new AudioCtx()
+        const source = ctx.createMediaStreamSource(new MediaStream([track]))
+        const gain = ctx.createGain()
+        source.connect(gain)
+        gain.connect(ctx.destination)
+        ctxRef.current = ctx
+        sourceRef.current = source
+        gainRef.current = gain
+      }
+    }
+
+    if (ctxRef.current) {
+      if (ctxRef.current.state === 'suspended') {
+        ctxRef.current.resume().catch(() => {})
+      }
+      // Звук идёт через Web Audio — глушим html-элемент во избежание дублирования
+      el.muted = true
+      if (gainRef.current) {
+        gainRef.current.gain.value = isMuted ? 0 : Math.max(0, volume / 100)
+      }
+    } else {
+      el.volume = Math.max(0, Math.min(1, volume / 100))
+      el.muted = isMuted
+    }
+  }, [volume, muted, track])
 
   if (!track) return null
   return <audio ref={ref} autoPlay />
@@ -389,7 +440,7 @@ function TileContextMenu({
   const isLocal = menu.type === 'me'
   const isLocalScreen = menu.type === 'screen-local'
   const currentVolume = isMuted ? 0 : volume
-  const fillStop = `calc(${currentVolume}% + ${(0.5 - currentVolume / 100) * 16}px)`
+  const fillPercent = currentVolume / 2
 
   return (
     <div
@@ -442,12 +493,12 @@ function TileContextMenu({
               <input
                 type="range"
                 min="0"
-                max="100"
+                max="200"
                 value={currentVolume}
                 onChange={(e) => onVolumeChange(Number(e.target.value))}
                 className="menu-volume-slider"
                 style={{
-                  background: `linear-gradient(to right, var(--accent) 0%, var(--accent) ${fillStop}, var(--border) ${fillStop}, var(--border) 100%)`,
+                  background: `linear-gradient(to right, var(--accent) 0%, var(--accent) ${fillPercent}%, var(--border) ${fillPercent}%, var(--border) 100%)`,
                 }}
               />
             </div>
