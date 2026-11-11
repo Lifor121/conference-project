@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRoom } from '../room/useRoom.js'
 import { useAudioActivity } from '../room/useAudioActivity.js'
+import CatLogo from './CatLogo.jsx'
 import ThemeToggle from './ThemeToggle.jsx'
 import {
   LeaveIcon,
@@ -805,6 +806,7 @@ export default function RoomView({ session, onLeave }) {
       {/* Шапка звонка */}
       <header className="room-topbar">
         <div className="topbar-left">
+          <CatLogo size={26} interactive={false} />
           <span className="room-title">Комната {session.roomId.slice(0, 8)}…</span>
           <button
             type="button"

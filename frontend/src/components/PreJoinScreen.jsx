@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import CatLogo from './CatLogo.jsx'
 import ThemeToggle from './ThemeToggle.jsx'
 import {
   MicIcon,
@@ -19,7 +20,10 @@ export default function PreJoinScreen({ roomId, onJoin }) {
   const aliveRef = useRef(true)
 
   const [displayName, setDisplayName] = useState(
-    () => localStorage.getItem('vc:displayName') || '',
+    () =>
+      localStorage.getItem('pettyconf:displayName') ||
+      localStorage.getItem('vc:displayName') ||
+      '',
   )
   const [audio, setAudio] = useState({ status: 'requesting', on: true, error: null })
   const [video, setVideo] = useState({ status: 'requesting', on: true, error: null })
@@ -112,7 +116,10 @@ export default function PreJoinScreen({ roomId, onJoin }) {
 
   function handleJoin() {
     const name = displayName.trim()
-    if (name) localStorage.setItem('vc:displayName', name)
+    if (name) {
+      localStorage.setItem('pettyconf:displayName', name)
+      localStorage.setItem('vc:displayName', name)
+    }
     const stream = streamRef.current
     handedOffRef.current = true
     onJoin({
@@ -131,7 +138,10 @@ export default function PreJoinScreen({ roomId, onJoin }) {
   return (
     <div className="prejoin-layout">
       <header className="prejoin-topbar">
-        <span className="prejoin-brand">VC</span>
+        <div className="prejoin-brand">
+          <CatLogo size={32} interactive />
+          <span>PettyConf</span>
+        </div>
         <ThemeToggle />
       </header>
 

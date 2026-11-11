@@ -33,7 +33,7 @@ services:
       - --external-ip=${MEDIASOUP_ANNOUNCED_IP}
       - --lt-cred-mech
       - --static-auth-secret=${TURN_CREDENTIAL}
-      - --realm=vc.local
+      - --realm=pettyconf.local
       - --min-port=49160
       - --max-port=49200
       - --fingerprint

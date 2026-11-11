@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react'
 
-const THEME_KEY = 'vc:theme' // 'system' | 'light' | 'dark'
+const THEME_KEY = 'pettyconf:theme' // 'system' | 'light' | 'dark'
 
 export function getSavedTheme() {
   try {
-    return localStorage.getItem(THEME_KEY) || 'system'
+    return localStorage.getItem(THEME_KEY) || localStorage.getItem('vc:theme') || 'system'
   } catch {
     return 'system'
   }

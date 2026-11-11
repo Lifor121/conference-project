@@ -36,7 +36,7 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           source: "bundle/*"
-          target: "/opt/vc"
+          target: "/opt/pettyconf"
           strip_components: 1
 
       - name: Развертывание
@@ -46,10 +46,14 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           script: |
-            cd /opt/vc
+            if [ ! -f /opt/pettyconf/.env ] && [ -f /opt/vc/.env ]; then
+              cp /opt/vc/.env /opt/pettyconf/.env
+            fi
+
+            cd /opt/pettyconf
 
             if [ ! -f .env ]; then
-              echo "ОШИБКА: /opt/vc/.env отсутствует — создайте вручную (см. README)"
+              echo "ОШИБКА: /opt/pettyconf/.env отсутствует — создайте вручную (см. README)"
               exit 1
             fi
 

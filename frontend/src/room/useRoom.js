@@ -32,12 +32,12 @@ function withTimeout(promise, ms, label) {
 // страницы и переключение сети. Сервер по нему опознаёт вернувшегося
 // участника и заменяет старую сессию вместо создания дубля.
 // Между вкладками id разные (sessionStorage не общий).
-const PEER_ID_KEY = 'vc:peerId'
+const PEER_ID_KEY = 'pettyconf:peerId'
 
 function getStablePeerId() {
   let id = null
   try {
-    id = sessionStorage.getItem(PEER_ID_KEY)
+    id = sessionStorage.getItem(PEER_ID_KEY) || sessionStorage.getItem('vc:peerId')
   } catch {
     // приватный режим и т.п. — просто сгенерируем новый
   }

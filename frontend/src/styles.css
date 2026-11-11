@@ -200,7 +200,7 @@ label {
 }
 
 /* ==========================================================================
-   ГЛАВНАЯ СТРАНИЦА (VC)
+   ГЛАВНАЯ СТРАНИЦА (PettyConf)
    ========================================================================== */
 
 .home-layout {
@@ -229,11 +229,18 @@ label {
   margin-bottom: 36px;
 }
 
+.home-brand {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  margin-bottom: 8px;
+}
+
 .home-hero h1 {
   font-size: 56px;
   font-weight: 700;
   letter-spacing: -0.03em;
-  margin: 0 0 8px;
+  margin: 0;
   color: var(--text);
 }
 
@@ -333,7 +340,15 @@ label {
   width: 100%;
 }
 
+.cat-logo {
+  user-select: none;
+  pointer-events: none;
+}
+
 .prejoin-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   font-size: 20px;
   font-weight: 700;
   letter-spacing: -0.02em;
@@ -1554,6 +1569,10 @@ label {
 
   .home-cards {
     grid-template-columns: 1fr;
+  }
+
+  .home-brand {
+    gap: 14px;
   }
 
   .home-hero h1 {

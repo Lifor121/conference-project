@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../api/client.js'
+import CatLogo from '../components/CatLogo.jsx'
 import ThemeToggle from '../components/ThemeToggle.jsx'
 
 export default function HomePage() {
@@ -38,7 +39,10 @@ export default function HomePage() {
 
       <main className="home">
         <div className="home-hero">
-          <h1>VC</h1>
+          <div className="home-brand">
+            <CatLogo size={76} interactive />
+            <h1>PettyConf</h1>
+          </div>
           <p className="home-subtitle">Открытые видеовстречи</p>
         </div>
 
