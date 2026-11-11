@@ -68,7 +68,7 @@ export default function CatLogo({
       {/* Белая внешняя обводка для темного фона */}
       <g
         stroke="#FFFFFF"
-        strokeWidth="25"
+        strokeWidth="35"
         strokeLinejoin="round"
         strokeLinecap="round"
         fill="none"

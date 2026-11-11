@@ -1,82 +1,115 @@
 :root {
-  /* Акцентный цвет — умеренный синий, используется только для ключевых акцентов */
-  --accent: #2563eb;
-  --accent-hover: #1d4ed8;
-  --accent-active: #1e40af;
-  --accent-subtle: rgba(37, 99, 235, 0.1);
-  --accent-border: rgba(37, 99, 235, 0.35);
+  /* Палитра PettyConf (холодный морской/небесный спектр):
+     #1F333C, #659FD3, #85C3E7, #98B2BD, #CFDCE3, #EFF7FA */
+
+  /* Основной акцент — лазурный синий #659FD3 */
+  --accent: #4889c2;
+  --accent-hover: #3b7bb4;
+  --accent-active: #306ba0;
+  --accent-subtle: rgba(101, 159, 211, 0.14);
+  --accent-border: rgba(101, 159, 211, 0.35);
+  --accent-glow: rgba(101, 159, 211, 0.4);
 
   /* Семантические цвета */
-  --danger: #ef4444;
-  --danger-hover: #dc2626;
-  --danger-subtle: rgba(239, 68, 68, 0.12);
+  --danger: #e06b53;
+  --danger-hover: #ce5840;
+  --danger-subtle: rgba(224, 107, 83, 0.14);
+  --danger-border: rgba(224, 107, 83, 0.32);
 
-  --success: #10b981;
-  --warning: #f59e0b;
+  --success: #659FD3;
+  --success-hover: #508ec4;
+  --success-subtle: rgba(101, 159, 211, 0.16);
+
+  --warning: #DE9C53;
+  --warning-hover: #ce8a3f;
+  --warning-subtle: rgba(222, 156, 83, 0.18);
 
   --font-sans: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   --radius-sm: 6px;
   --radius-md: 10px;
   --radius-lg: 14px;
   --radius-pill: 9999px;
+  --transition-fast: 0.15s ease;
 }
 
 /* ==========================================================================
-   ТЁМНАЯ ТЕМА
+   ТЁМНАЯ ТЕМА (Глубокий полуночный сине-серый, без зелёных оттенков)
    ========================================================================== */
 
 :root, [data-theme="dark"] {
-  --bg: #0b0d13;
-  --bg-subtle: #11141c;
-  --surface: #161924;
-  --surface-raised: #1f2332;
-  --surface-hover: #262c3e;
-  --border: rgba(255, 255, 255, 0.08);
-  --border-hover: rgba(255, 255, 255, 0.16);
+  --accent: #659FD3;
+  --accent-hover: #85C3E7;
+  --accent-active: #508ec4;
+  --accent-subtle: rgba(101, 159, 211, 0.18);
+  --accent-border: rgba(133, 195, 231, 0.35);
+  --accent-glow: rgba(101, 159, 211, 0.45);
 
-  --text: #f3f4f6;
-  --text-muted: #9ca3af;
-  --text-dim: #6b7280;
+  --success: #85C3E7;
+  --success-hover: #a2d4f0;
+  --success-subtle: rgba(133, 195, 231, 0.16);
 
-  --dock-bg: rgba(22, 25, 36, 0.88);
-  --dock-border: rgba(255, 255, 255, 0.1);
-  --dock-shadow: 0 16px 40px rgba(0, 0, 0, 0.6);
+  --bg: #0e131b;
+  --bg-subtle: #131a24;
+  --surface: #19212e;
+  --surface-raised: #222b3b;
+  --surface-hover: #2c374b;
+  --border: rgba(207, 220, 227, 0.12);
+  --border-hover: rgba(207, 220, 227, 0.25);
 
-  --badge-bg: rgba(15, 20, 30, 0.75);
-  --badge-text: #ffffff;
+  --text: #EFF7FA;
+  --text-muted: #98B2BD;
+  --text-dim: rgba(152, 178, 189, 0.6);
 
-  --card-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
-  --video-bg: #07080c;
-  --tile-bg: #131620;
+  --dock-bg: rgba(25, 33, 46, 0.9);
+  --dock-border: rgba(207, 220, 227, 0.15);
+  --dock-shadow: 0 16px 40px rgba(5, 8, 14, 0.65);
+
+  --badge-bg: rgba(19, 26, 36, 0.86);
+  --badge-text: #EFF7FA;
+
+  --card-shadow: 0 4px 20px rgba(5, 8, 14, 0.45);
+  --video-bg: #0a0e14;
+  --tile-bg: #151c27;
 }
 
 /* ==========================================================================
-   СВЕТЛАЯ ТЕМА (Мягкие, гармоничные нейтральные тона без ядовитой белизны)
+   СВЕТЛАЯ ТЕМА (Холодный ледяной #EFF7FA и чистый белый, без розоватых тонов)
    ========================================================================== */
 
 [data-theme="light"] {
-  --bg: #eef1f6;
-  --bg-subtle: #e5eaf0;
+  --accent: #4384be;
+  --accent-hover: #3573ab;
+  --accent-active: #2a6296;
+  --accent-subtle: rgba(67, 132, 190, 0.14);
+  --accent-border: rgba(67, 132, 190, 0.35);
+  --accent-glow: rgba(67, 132, 190, 0.35);
+
+  --success: #4384be;
+  --success-hover: #3573ab;
+  --success-subtle: rgba(67, 132, 190, 0.14);
+
+  --bg: #EFF7FA;
+  --bg-subtle: #e4edf1;
   --surface: #ffffff;
-  --surface-raised: #f1f4f9;
-  --surface-hover: #e4e8ef;
-  --border: rgba(15, 23, 42, 0.09);
-  --border-hover: rgba(15, 23, 42, 0.18);
+  --surface-raised: #eaf1f5;
+  --surface-hover: #dce7ed;
+  --border: rgba(31, 51, 60, 0.12);
+  --border-hover: rgba(31, 51, 60, 0.22);
 
-  --text: #1e293b;
-  --text-muted: #64748b;
-  --text-dim: #94a3b8;
+  --text: #1F333C;
+  --text-muted: #526e7b;
+  --text-dim: #7f99a6;
 
-  --dock-bg: rgba(255, 255, 255, 0.92);
-  --dock-border: rgba(15, 23, 42, 0.1);
-  --dock-shadow: 0 12px 32px rgba(15, 23, 42, 0.08);
+  --dock-bg: rgba(255, 255, 255, 0.94);
+  --dock-border: rgba(31, 51, 60, 0.12);
+  --dock-shadow: 0 12px 32px rgba(31, 51, 60, 0.08);
 
-  --badge-bg: rgba(255, 255, 255, 0.88);
-  --badge-text: #1e293b;
+  --badge-bg: rgba(234, 241, 245, 0.95);
+  --badge-text: #1F333C;
 
-  --card-shadow: 0 2px 8px rgba(15, 23, 42, 0.04), 0 1px 2px rgba(15, 23, 42, 0.02);
-  --video-bg: #e5eaf0;
-  --tile-bg: #e5eaf0;
+  --card-shadow: 0 4px 16px rgba(31, 51, 60, 0.05), 0 1px 3px rgba(31, 51, 60, 0.03);
+  --video-bg: #dce7ec;
+  --tile-bg: #e4edf1;
 }
 
 /* ==========================================================================
@@ -85,6 +118,16 @@
 
 *, *::before, *::after {
   box-sizing: border-box;
+}
+
+::selection {
+  background: var(--accent-subtle);
+  color: var(--text);
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-hover) transparent;
 }
 
 html, body {
@@ -131,12 +174,12 @@ button.primary {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 2px 6px rgba(37, 99, 235, 0.2);
+  box-shadow: 0 2px 8px var(--accent-subtle);
 }
 
 button.primary:hover:not(:disabled) {
   background: var(--accent-hover);
-  box-shadow: 0 4px 10px rgba(37, 99, 235, 0.3);
+  box-shadow: 0 4px 12px var(--accent-glow);
 }
 
 button.primary:active:not(:disabled) {
@@ -315,7 +358,7 @@ label {
   padding: 12px 16px;
   border-radius: var(--radius-md);
   background: var(--danger-subtle);
-  border: 1px solid rgba(239, 68, 68, 0.3);
+  border: 1px solid var(--danger-border);
   color: var(--danger);
   font-size: 14px;
 }
@@ -528,7 +571,7 @@ label {
   padding: 10px 12px;
   border-radius: var(--radius-md);
   background: var(--danger-subtle);
-  border: 1px solid rgba(239, 68, 68, 0.25);
+  border: 1px solid var(--danger-border);
   font-size: 13px;
   color: var(--danger);
   display: flex;
@@ -822,7 +865,7 @@ label {
 .video-tile.is-focused.is-speaking,
 .video-tile.is-thumbnail.is-speaking {
   border-color: var(--accent) !important;
-  box-shadow: 0 0 0 2px var(--accent), 0 0 16px rgba(37, 99, 235, 0.35) !important;
+  box-shadow: 0 0 0 2px var(--accent), 0 0 16px var(--accent-glow) !important;
 }
 
 /* ==========================================================================
@@ -948,7 +991,7 @@ label {
 
 /* Плейсхолдер трансляции до нажатия «Смотреть стрим» */
 .video-tile.stream-placeholder {
-  background: radial-gradient(circle at 50% 35%, rgba(99, 102, 241, 0.12), var(--tile-bg) 75%);
+  background: radial-gradient(circle at 50% 35%, var(--accent-subtle), var(--tile-bg) 75%);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -978,7 +1021,7 @@ label {
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 0 20px rgba(99, 102, 241, 0.25);
+  box-shadow: 0 0 20px var(--accent-glow);
 }
 
 .stream-live-badge {
@@ -1030,14 +1073,14 @@ label {
   font-weight: 500;
   cursor: pointer;
   transition: background var(--transition-fast), transform var(--transition-fast), box-shadow var(--transition-fast);
-  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.35);
+  box-shadow: 0 2px 8px var(--accent-subtle);
   touch-action: manipulation;
 }
 
 .stream-watch-btn:hover {
   background: var(--accent-hover);
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.45);
+  box-shadow: 0 4px 12px var(--accent-glow);
 }
 
 .stream-watch-btn:active {
@@ -1048,7 +1091,7 @@ label {
   position: absolute;
   top: 8px;
   right: 8px;
-  background: rgba(15, 23, 42, 0.78);
+  background: rgba(25, 33, 46, 0.82);
   backdrop-filter: blur(8px);
   color: #f1f5f9;
   border: 1px solid rgba(255, 255, 255, 0.15);
@@ -1270,7 +1313,7 @@ label {
   background: var(--accent);
   border-color: var(--accent);
   color: #ffffff;
-  box-shadow: 0 0 16px rgba(99, 102, 241, 0.45);
+  box-shadow: 0 0 16px var(--accent-glow);
 }
 
 .dock-btn.screen-active:hover {
@@ -1299,7 +1342,7 @@ label {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(15, 23, 42, 0.45);
+  background: rgba(14, 19, 27, 0.65);
   backdrop-filter: blur(8px);
   z-index: 50;
 }
