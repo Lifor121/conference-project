@@ -198,11 +198,11 @@ function AudioSink({ track, volume = 100, muted = false }) {
     return () => {
       el.srcObject = null
       if (sourceRef.current) {
-        try { sourceRef.current.disconnect() } catch {}
+        try { sourceRef.current.disconnect() } catch { /* ignore */ }
         sourceRef.current = null
       }
       if (gainRef.current) {
-        try { gainRef.current.disconnect() } catch {}
+        try { gainRef.current.disconnect() } catch { /* ignore */ }
         gainRef.current = null
       }
       if (ctxRef.current) {

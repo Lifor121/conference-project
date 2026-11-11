@@ -1,14 +1,18 @@
 name: Build & Push
 
 on:
-  push:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
     branches: [main]
+  workflow_dispatch:
 
 env:
   REGISTRY: ghcr.io
 
 jobs:
   build:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -21,6 +25,8 @@ jobs:
           - { name: frontend, context: ./frontend }
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       # ghcr требует lowercase в имени репозитория
       - name: Нормализовать имя образа в нижний регистр

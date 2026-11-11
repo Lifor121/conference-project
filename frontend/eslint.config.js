@@ -13,6 +13,7 @@ export default [
       'react-hooks/rules-of-hooks': 'error',
       'react-hooks/exhaustive-deps': 'warn',
       'no-undef': 'error',
+      'no-empty': ['error', { allowEmptyCatch: true }],
       'react/prop-types': 'off',
       'react/react-in-jsx-scope': 'off',
     },
