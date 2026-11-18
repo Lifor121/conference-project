@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState } from 'react'
 
 let sharedAudioContext = null
 
@@ -27,11 +27,10 @@ function getAudioContext() {
  */
 export function useAudioActivity(track, enabled = true, threshold = 16) {
   const [speaking, setSpeaking] = useState(false)
-  const timerRef = useRef(null)
 
   useEffect(() => {
+    setSpeaking(false)
     if (!track || !enabled || track.readyState !== 'live' || track.kind !== 'audio') {
-      setSpeaking(false)
       return
     }
 
@@ -42,6 +41,9 @@ export function useAudioActivity(track, enabled = true, threshold = 16) {
     let analyser = null
     let intervalId = null
     let disposed = false
+    let warmupTicks = 2 // Первые 180 мс отсекают переходные импульсы при подключении ноды
+    let isSpeaking = false
+    let lastSpeechTime = 0
 
     try {
       source = ctx.createMediaStreamSource(new MediaStream([track]))
@@ -57,6 +59,12 @@ export function useAudioActivity(track, enabled = true, threshold = 16) {
 
     const checkVolume = () => {
       if (disposed) return
+
+      if (warmupTicks > 0) {
+        warmupTicks--
+        return
+      }
+
       analyser.getByteFrequencyData(buffer)
 
       let sum = 0
@@ -64,13 +72,17 @@ export function useAudioActivity(track, enabled = true, threshold = 16) {
         sum += buffer[i]
       }
       const avg = sum / buffer.length
+      const now = Date.now()
 
       if (avg >= threshold) {
-        setSpeaking(true)
-        clearTimeout(timerRef.current)
-        timerRef.current = setTimeout(() => {
-          if (!disposed) setSpeaking(false)
-        }, 350) // задержка 350мс, чтобы рамка не мерцала между паузами
+        lastSpeechTime = now
+        if (!isSpeaking) {
+          isSpeaking = true
+          setSpeaking(true)
+        }
+      } else if (isSpeaking && now - lastSpeechTime > 350) {
+        isSpeaking = false
+        setSpeaking(false)
       }
     }
 
@@ -80,7 +92,7 @@ export function useAudioActivity(track, enabled = true, threshold = 16) {
     return () => {
       disposed = true
       clearInterval(intervalId)
-      clearTimeout(timerRef.current)
+      setSpeaking(false)
       try {
         source?.disconnect()
       } catch {

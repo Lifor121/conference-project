@@ -113,6 +113,15 @@ export async function createDeepFilterPipeline(rawTrack, options = {}) {
     dryGain = audioContext.createGain()
     wetGain = audioContext.createGain()
 
+    // Устанавливаем исходные значения gain до подключения, чтобы избежать щелчков
+    if (isEnabled) {
+      dryGain.gain.value = 0
+      wetGain.gain.value = 1
+    } else {
+      dryGain.gain.value = 1
+      wetGain.gain.value = 0
+    }
+
     // Прямой путь (dry, без шумоподавления)
     sourceNode.connect(dryGain)
     dryGain.connect(destNode)
