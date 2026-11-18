@@ -499,7 +499,14 @@ function TileContextMenu({
                 onChange={(e) => onVolumeChange(Number(e.target.value))}
                 className="menu-volume-slider"
                 style={{
-                  background: `linear-gradient(to right, var(--accent) 0%, var(--accent) ${fillPercent}%, var(--border) ${fillPercent}%, var(--border) 100%)`,
+                  background:
+                    fillPercent <= 0
+                      ? 'var(--border)'
+                      : fillPercent >= 100
+                        ? 'var(--accent)'
+                        : `linear-gradient(to right, var(--accent) 0%, var(--accent) ${fillPercent}%, var(--border) ${fillPercent}%, var(--border) 100%) no-repeat`,
+                  backgroundRepeat: 'no-repeat',
+                  backgroundSize: '100% 100%',
                 }}
               />
             </div>
