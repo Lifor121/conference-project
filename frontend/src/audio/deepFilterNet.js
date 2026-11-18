@@ -4,6 +4,8 @@ import {
 } from '@workadventure/noise-suppression/deepfilternet'
 
 const STORAGE_KEY = 'pettyconf:deepfilternet'
+const ATTENUATION_KEY = 'pettyconf:attenuationDb'
+export const DEFAULT_ATTENUATION_DB = 25
 
 export function isDeepFilterSupported() {
   if (typeof window === 'undefined') return false
@@ -30,9 +32,25 @@ export function setSavedDeepFilterEnabled(enabled) {
   } catch {}
 }
 
+export function getSavedAttenuationDb() {
+  try {
+    const val = localStorage.getItem(ATTENUATION_KEY)
+    const num = Number(val)
+    return num && !isNaN(num) ? num : DEFAULT_ATTENUATION_DB
+  } catch {
+    return DEFAULT_ATTENUATION_DB
+  }
+}
+
+export function setSavedAttenuationDb(val) {
+  try {
+    localStorage.setItem(ATTENUATION_KEY, String(val))
+  } catch {}
+}
+
 /**
  * Оборачивает аудиодорожку микрофона в AudioWorklet с DeepFilterNet3.
- * Возвращает { track, rawTrack, cleanup, setEnabled, isEnabled, isFiltered, ready }
+ * Возвращает { track, rawTrack, cleanup, setEnabled, isEnabled, setLevel, getLevel, isFiltered, ready }
  */
 export async function createDeepFilterPipeline(rawTrack, options = {}) {
   if (!rawTrack || rawTrack.kind !== 'audio') {
@@ -42,6 +60,8 @@ export async function createDeepFilterPipeline(rawTrack, options = {}) {
       cleanup: () => {},
       setEnabled: () => {},
       isEnabled: () => false,
+      setLevel: () => {},
+      getLevel: () => DEFAULT_ATTENUATION_DB,
       isFiltered: false,
     }
   }
@@ -55,6 +75,8 @@ export async function createDeepFilterPipeline(rawTrack, options = {}) {
       cleanup: () => {},
       setEnabled: () => {},
       isEnabled: () => false,
+      setLevel: () => {},
+      getLevel: () => DEFAULT_ATTENUATION_DB,
       isFiltered: false,
     }
   }
@@ -67,6 +89,7 @@ export async function createDeepFilterPipeline(rawTrack, options = {}) {
   let workletHandle = null
   let processedTrack = null
   let isEnabled = options.enabled ?? getSavedDeepFilterEnabled()
+  let currentAttenuationDb = options.speechAttenuationDb ?? getSavedAttenuationDb()
 
   const resumeContext = () => {
     if (audioContext && audioContext.state === 'suspended') {
@@ -96,8 +119,8 @@ export async function createDeepFilterPipeline(rawTrack, options = {}) {
 
     // Инициализация Wasm-ноды DeepFilterNet3
     workletHandle = await createDeepFilterNetAudioWorklet(audioContext, {
-      speechAttenuationDb: options.speechAttenuationDb ?? 25,
-      pauseAttenuationDb: options.pauseAttenuationDb ?? 45,
+      speechAttenuationDb: currentAttenuationDb,
+      pauseAttenuationDb: Math.min(currentAttenuationDb + 20, 60),
       bypassUntilReady: true,
       readyTimeoutMs: 15000,
       ...options,
@@ -147,6 +170,42 @@ export async function createDeepFilterPipeline(rawTrack, options = {}) {
       applyGains(isEnabled)
     }
 
+    const setLevel = async (newDb) => {
+      const db = Number(newDb)
+      if (isNaN(db) || db === currentAttenuationDb) return
+      currentAttenuationDb = db
+      setSavedAttenuationDb(db)
+      if (!audioContext || audioContext.state === 'closed') return
+
+      try {
+        const now = audioContext.currentTime
+        dryGain.gain.setValueAtTime(1, now)
+        wetGain.gain.setValueAtTime(0, now)
+
+        const oldHandle = workletHandle
+        const newHandle = await createDeepFilterNetAudioWorklet(audioContext, {
+          speechAttenuationDb: db,
+          pauseAttenuationDb: Math.min(db + 20, 60),
+          bypassUntilReady: true,
+          readyTimeoutMs: 15000,
+          ...options,
+        })
+
+        try { sourceNode?.disconnect(oldHandle.node) } catch {}
+        try { oldHandle?.node?.disconnect() } catch {}
+        try { oldHandle?.dispose?.() } catch {}
+
+        workletHandle = newHandle
+        sourceNode.connect(workletHandle.node)
+        workletHandle.node.connect(wetGain)
+
+        applyGains(isEnabled)
+      } catch (err) {
+        console.warn('[DeepFilterNet] Ошибка смены уровня:', err)
+        applyGains(isEnabled)
+      }
+    }
+
     const cleanup = () => {
       if (typeof window !== 'undefined') {
         window.removeEventListener('click', resumeContext)
@@ -177,6 +236,8 @@ export async function createDeepFilterPipeline(rawTrack, options = {}) {
       cleanup,
       setEnabled: setFilterEnabled,
       isEnabled: () => isEnabled,
+      setLevel,
+      getLevel: () => currentAttenuationDb,
       isFiltered: true,
       ready: workletHandle.ready,
     }
@@ -198,6 +259,8 @@ export async function createDeepFilterPipeline(rawTrack, options = {}) {
       cleanup: () => {},
       setEnabled: () => {},
       isEnabled: () => false,
+      setLevel: () => {},
+      getLevel: () => DEFAULT_ATTENUATION_DB,
       isFiltered: false,
       error: err,
     }

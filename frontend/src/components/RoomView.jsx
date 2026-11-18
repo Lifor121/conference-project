@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRoom } from '../room/useRoom.js'
 import { useAudioActivity } from '../room/useAudioActivity.js'
+import { useTheme } from '../theme.js'
 import CatLogo from './CatLogo.jsx'
-import ThemeToggle from './ThemeToggle.jsx'
+import SettingsModal from './SettingsModal.jsx'
 import {
   LeaveIcon,
   MicIcon,
@@ -19,7 +20,7 @@ import {
   VolumeOffIcon,
   MaximizeIcon,
   MinimizeIcon,
-  SparklesIcon,
+  SettingsIcon,
 } from './icons.jsx'
 
 function SpotlightStage({ children, aspectRatio }) {
@@ -408,8 +409,6 @@ function TileContextMenu({
   videoEnabled,
   toggleAudio,
   toggleVideo,
-  deepFilterEnabled,
-  toggleDeepFilter,
 }) {
   const menuRef = useRef(null)
 
@@ -484,17 +483,6 @@ function TileContextMenu({
           >
             {videoEnabled ? <VideoOffIcon size={16} /> : <VideoIcon size={16} />}
             <span>{videoEnabled ? 'Выключить камеру' : 'Включить камеру'}</span>
-          </button>
-          <button
-            type="button"
-            className="menu-item-btn"
-            onClick={() => {
-              toggleDeepFilter()
-              onClose()
-            }}
-          >
-            <SparklesIcon size={16} />
-            <span>{deepFilterEnabled ? 'Шумоподавление: вкл (AI)' : 'Шумоподавление: выкл'}</span>
           </button>
         </div>
       ) : isLocalScreen ? null : (
@@ -600,10 +588,18 @@ export default function RoomView({ session, onLeave }) {
     supportsScreenShare,
     deepFilterEnabled,
     toggleDeepFilter,
+    attenuationDb,
+    setAttenuationDb,
+    selectedDevices,
+    changeAudioDevice,
+    changeVideoDevice,
     toggleAudio,
     toggleVideo,
     toggleScreenShare,
   } = useRoom({ session })
+
+  const { theme, setTheme } = useTheme()
+  const [settingsOpen, setSettingsOpen] = useState(false)
 
   const joined = phase === 'joined'
   const [copied, setCopied] = useState(false)
@@ -862,8 +858,6 @@ export default function RoomView({ session, onLeave }) {
               </span>
             </div>
           )}
-
-          <ThemeToggle />
         </div>
       </header>
 
@@ -944,22 +938,22 @@ export default function RoomView({ session, onLeave }) {
         <div className="dock-container">
           <button
             type="button"
+            className="dock-btn secondary"
+            onClick={() => setSettingsOpen(true)}
+            title="Настройки"
+            aria-label="Настройки"
+          >
+            <SettingsIcon size={22} />
+          </button>
+
+          <button
+            type="button"
             className={`dock-btn ${audioEnabled ? 'active' : 'danger-state'}`}
             onClick={toggleAudio}
             disabled={!joined}
             title={audioEnabled ? 'Выключить микрофон' : 'Включить микрофон'}
           >
             {audioEnabled ? <MicIcon size={22} /> : <MicOffIcon size={22} />}
-          </button>
-
-          <button
-            type="button"
-            className={`dock-btn ${deepFilterEnabled ? 'filter-active' : 'secondary'}`}
-            onClick={toggleDeepFilter}
-            disabled={!joined}
-            title={deepFilterEnabled ? 'Шумоподавление: включено (DeepFilterNet)' : 'Шумоподавление: выключено'}
-          >
-            <SparklesIcon size={20} />
           </button>
 
           <button
@@ -1021,8 +1015,24 @@ export default function RoomView({ session, onLeave }) {
           videoEnabled={videoEnabled}
           toggleAudio={toggleAudio}
           toggleVideo={toggleVideo}
+        />
+      )}
+
+      {/* Модальное окно настроек */}
+      {settingsOpen && (
+        <SettingsModal
+          isOpen={settingsOpen}
+          onClose={() => setSettingsOpen(false)}
+          selectedMicId={selectedDevices.micId}
+          selectedCameraId={selectedDevices.cameraId}
+          onSelectMic={changeAudioDevice}
+          onSelectCamera={changeVideoDevice}
           deepFilterEnabled={deepFilterEnabled}
-          toggleDeepFilter={toggleDeepFilter}
+          onToggleDeepFilter={toggleDeepFilter}
+          attenuationDb={attenuationDb}
+          onSelectAttenuation={setAttenuationDb}
+          theme={theme}
+          onSelectTheme={setTheme}
         />
       )}
     </div>

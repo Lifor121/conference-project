@@ -8,7 +8,6 @@ import {
   VideoOffIcon,
   CopyIcon,
   CheckIcon,
-  SparklesIcon,
 } from './icons.jsx'
 import {
   getSavedDeepFilterEnabled,
@@ -271,8 +270,7 @@ export default function PreJoinScreen({ roomId, onJoin }) {
               onChange={handleDeepFilterChange}
             />
             <span className="checkbox-setting-label">
-              <SparklesIcon size={14} className="accent-text" />
-              <span>Шумоподавление DeepFilterNet (AI)</span>
+              <span>Шумоподавление DeepFilterNet</span>
             </span>
           </label>
 

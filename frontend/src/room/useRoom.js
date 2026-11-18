@@ -5,6 +5,8 @@ import {
   createDeepFilterPipeline,
   getSavedDeepFilterEnabled,
   setSavedDeepFilterEnabled,
+  getSavedAttenuationDb,
+  setSavedAttenuationDb,
 } from '../audio/deepFilterNet.js'
 
 const ERROR_TEXT = {
@@ -102,6 +104,17 @@ export function useRoom({ session }) {
     deepFilterEnabledRef.current = v
     setDeepFilterEnabledState(v)
   }
+
+  const [attenuationDb, setAttenuationDbState] = useState(() => getSavedAttenuationDb())
+  const attenuationDbRef = useRef(attenuationDb)
+
+  const [selectedDevices, setSelectedDevices] = useState({
+    micId: session.devices?.micId || '',
+    cameraId: session.devices?.cameraId || '',
+  })
+  const selectedDevicesRef = useRef(selectedDevices)
+  selectedDevicesRef.current = selectedDevices
+
   const pipelineRef = useRef(null)
 
   const ensureAudioPipeline = useCallback(async (rawTrack) => {
@@ -119,6 +132,7 @@ export function useRoom({ session }) {
     }
     const pipeline = await createDeepFilterPipeline(rawTrack, {
       enabled: deepFilterEnabledRef.current,
+      speechAttenuationDb: attenuationDbRef.current,
     })
     pipelineRef.current = pipeline
     return pipeline
@@ -129,6 +143,16 @@ export function useRoom({ session }) {
     setDeepFilterEnabled(next)
     setSavedDeepFilterEnabled(next)
     pipelineRef.current?.setEnabled?.(next)
+  }, [])
+
+  const setAttenuationDb = useCallback(async (db) => {
+    const num = Number(db)
+    attenuationDbRef.current = num
+    setAttenuationDbState(num)
+    setSavedAttenuationDb(num)
+    if (pipelineRef.current?.setLevel) {
+      await pipelineRef.current.setLevel(num)
+    }
   }, [])
 
   const setAudioEnabled = (v) => { audioEnabledRef.current = v; setAudioEnabledState(v) }
@@ -186,6 +210,89 @@ export function useRoom({ session }) {
 
   // --- контролы (вызываются из RoomView) ---
 
+  const changeAudioDevice = useCallback(async (deviceId) => {
+    setSelectedDevices((prev) => ({ ...prev, micId: deviceId }))
+    const refs = r.current
+    if (!refs.rawAudioTrack) {
+      return
+    }
+
+    try {
+      const constraints = {
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: !deepFilterEnabledRef.current,
+          autoGainControl: true,
+          ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
+        },
+      }
+      const stream = await navigator.mediaDevices.getUserMedia(constraints)
+      const newRawTrack = stream.getAudioTracks()[0]
+      if (!newRawTrack) throw new Error('Микрофон не найден')
+
+      const oldRawTrack = refs.rawAudioTrack
+      refs.extraLocalTracks.add(newRawTrack)
+      refs.rawAudioTrack = newRawTrack
+
+      const pipeline = await ensureAudioPipeline(newRawTrack)
+      const trackToProduce = pipeline?.track || newRawTrack
+
+      trackToProduce.enabled = audioEnabledRef.current
+      newRawTrack.enabled = audioEnabledRef.current
+      refs.activeTracks.audio = trackToProduce
+      setLocalAudioTrack(trackToProduce)
+
+      const producer = refs.producers.get('webcam:audio')
+      if (producer && !producer.closed) {
+        await producer.replaceTrack({ track: trackToProduce })
+      }
+
+      if (oldRawTrack && oldRawTrack !== newRawTrack) {
+        refs.extraLocalTracks.delete(oldRawTrack)
+        oldRawTrack.stop()
+      }
+    } catch (err) {
+      console.error('[useRoom] Ошибка смены микрофона:', err)
+      throw err
+    }
+  }, [ensureAudioPipeline])
+
+  const changeVideoDevice = useCallback(async (deviceId) => {
+    setSelectedDevices((prev) => ({ ...prev, cameraId: deviceId }))
+    const refs = r.current
+    if (!refs.activeTracks.video) {
+      return
+    }
+
+    try {
+      const constraints = {
+        video: deviceId ? { deviceId: { exact: deviceId } } : true,
+      }
+      const stream = await navigator.mediaDevices.getUserMedia(constraints)
+      const newTrack = stream.getVideoTracks()[0]
+      if (!newTrack) throw new Error('Камера не найдена')
+
+      const oldTrack = refs.activeTracks.video
+      refs.extraLocalTracks.add(newTrack)
+      refs.activeTracks.video = newTrack
+      newTrack.enabled = videoEnabledRef.current
+      setLocalVideoTrack(newTrack)
+
+      const producer = refs.producers.get('webcam:video')
+      if (producer && !producer.closed) {
+        await producer.replaceTrack({ track: newTrack })
+      }
+
+      if (oldTrack && oldTrack !== newTrack) {
+        refs.extraLocalTracks.delete(oldTrack)
+        oldTrack.stop()
+      }
+    } catch (err) {
+      console.error('[useRoom] Ошибка смены камеры:', err)
+      throw err
+    }
+  }, [])
+
   async function toggleAudio() {
     const refs = r.current
     if (!refs.signaling) return
@@ -197,7 +304,9 @@ export function useRoom({ session }) {
             echoCancellation: true,
             noiseSuppression: !deepFilterEnabledRef.current,
             autoGainControl: true,
-            ...(session.devices?.micId ? { deviceId: { exact: session.devices.micId } } : {}),
+            ...(selectedDevicesRef.current.micId
+              ? { deviceId: { exact: selectedDevicesRef.current.micId } }
+              : {}),
           },
         })
         const rawTrack = stream.getAudioTracks()[0]
@@ -251,13 +360,16 @@ export function useRoom({ session }) {
     }
   }
 
-  async function toggleVideo() {    const refs = r.current
+  async function toggleVideo() {
+    const refs = r.current
     if (!refs.signaling) return
     const producer = refs.producers.get('webcam:video')
     try {
       if (!producer) {
         const stream = await navigator.mediaDevices.getUserMedia({
-          video: { deviceId: session.devices?.cameraId || undefined },
+          video: selectedDevicesRef.current.cameraId
+            ? { deviceId: { exact: selectedDevicesRef.current.cameraId } }
+            : true,
         })
         const track = stream.getVideoTracks()[0]
         if (!track) throw new Error('Камера не найдена')
@@ -917,6 +1029,8 @@ export function useRoom({ session }) {
     audioEnabled, videoEnabled, localVideoTrack, localAudioTrack,
     screenEnabled, localScreenTrack, supportsScreenShare: isScreenShareSupported(),
     deepFilterEnabled, toggleDeepFilter,
+    attenuationDb, setAttenuationDb,
+    selectedDevices, changeAudioDevice, changeVideoDevice,
     toggleAudio, toggleVideo, toggleScreenShare,
   }
 }
