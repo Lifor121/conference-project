@@ -614,6 +614,37 @@ label {
   gap: 4px;
 }
 
+.checkbox-setting {
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  user-select: none;
+  font-size: 13px;
+  color: var(--text);
+  padding: 2px 0;
+}
+
+.checkbox-setting input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+  cursor: pointer;
+  margin: 0;
+  flex-shrink: 0;
+}
+
+.checkbox-setting-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.accent-text {
+  color: var(--accent);
+}
+
 .btn-link {
   color: var(--accent);
   text-decoration: underline;
@@ -1345,6 +1376,17 @@ label {
 
 .dock-btn.screen-active:hover {
   background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+.dock-btn.filter-active {
+  background: var(--surface-raised);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.dock-btn.filter-active:hover {
+  background: var(--surface-hover);
   border-color: var(--accent-hover);
 }
 

@@ -8,7 +8,12 @@ import {
   VideoOffIcon,
   CopyIcon,
   CheckIcon,
+  SparklesIcon,
 } from './icons.jsx'
+import {
+  getSavedDeepFilterEnabled,
+  setSavedDeepFilterEnabled,
+} from '../audio/deepFilterNet.js'
 
 const DEFAULT_NAME = 'Гость'
 
@@ -30,6 +35,9 @@ export default function PreJoinScreen({ roomId, onJoin }) {
   const [selected, setSelected] = useState({ cameraId: '', micId: '' })
   const [devices, setDevices] = useState({ cameras: [], mics: [] })
   const [copied, setCopied] = useState(false)
+  const [deepFilter, setDeepFilter] = useState(() => getSavedDeepFilterEnabled())
+  const deepFilterRef = useRef(deepFilter)
+  deepFilterRef.current = deepFilter
 
   const acquire = useCallback(async (kind, deviceId) => {
     const setState = kind === 'audio' ? setAudio : setVideo
@@ -40,7 +48,7 @@ export default function PreJoinScreen({ roomId, onJoin }) {
           ? {
               audio: {
                 echoCancellation: true,
-                noiseSuppression: true,
+                noiseSuppression: !deepFilterRef.current,
                 autoGainControl: true,
                 ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
               },
@@ -114,6 +122,17 @@ export default function PreJoinScreen({ roomId, onJoin }) {
     }).catch(() => {})
   }
 
+  function handleDeepFilterChange(e) {
+    const nextVal = e.target.checked
+    setDeepFilter(nextVal)
+    deepFilterRef.current = nextVal
+    setSavedDeepFilterEnabled(nextVal)
+    const audioTrack = streamRef.current?.getAudioTracks()[0]
+    if (audioTrack && typeof audioTrack.applyConstraints === 'function') {
+      audioTrack.applyConstraints({ noiseSuppression: !nextVal }).catch(() => {})
+    }
+  }
+
   function handleJoin() {
     const name = displayName.trim()
     if (name) {
@@ -128,6 +147,7 @@ export default function PreJoinScreen({ roomId, onJoin }) {
       stream,
       audioEnabled: stream.getAudioTracks().length > 0 && audio.on,
       videoEnabled: stream.getVideoTracks().length > 0 && video.on,
+      deepFilterEnabled: deepFilter,
       devices: { ...selected },
     })
   }
@@ -242,6 +262,18 @@ export default function PreJoinScreen({ roomId, onJoin }) {
                 ))
               )}
             </select>
+          </label>
+
+          <label className="checkbox-setting">
+            <input
+              type="checkbox"
+              checked={deepFilter}
+              onChange={handleDeepFilterChange}
+            />
+            <span className="checkbox-setting-label">
+              <SparklesIcon size={14} className="accent-text" />
+              <span>Шумоподавление DeepFilterNet (AI)</span>
+            </span>
           </label>
 
           <label>

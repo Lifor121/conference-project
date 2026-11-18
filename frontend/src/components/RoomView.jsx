@@ -19,6 +19,7 @@ import {
   VolumeOffIcon,
   MaximizeIcon,
   MinimizeIcon,
+  SparklesIcon,
 } from './icons.jsx'
 
 function SpotlightStage({ children, aspectRatio }) {
@@ -407,6 +408,8 @@ function TileContextMenu({
   videoEnabled,
   toggleAudio,
   toggleVideo,
+  deepFilterEnabled,
+  toggleDeepFilter,
 }) {
   const menuRef = useRef(null)
 
@@ -481,6 +484,17 @@ function TileContextMenu({
           >
             {videoEnabled ? <VideoOffIcon size={16} /> : <VideoIcon size={16} />}
             <span>{videoEnabled ? 'Выключить камеру' : 'Включить камеру'}</span>
+          </button>
+          <button
+            type="button"
+            className="menu-item-btn"
+            onClick={() => {
+              toggleDeepFilter()
+              onClose()
+            }}
+          >
+            <SparklesIcon size={16} />
+            <span>{deepFilterEnabled ? 'Шумоподавление: вкл (AI)' : 'Шумоподавление: выкл'}</span>
           </button>
         </div>
       ) : isLocalScreen ? null : (
@@ -584,6 +598,8 @@ export default function RoomView({ session, onLeave }) {
     screenEnabled,
     localScreenTrack,
     supportsScreenShare,
+    deepFilterEnabled,
+    toggleDeepFilter,
     toggleAudio,
     toggleVideo,
     toggleScreenShare,
@@ -938,6 +954,16 @@ export default function RoomView({ session, onLeave }) {
 
           <button
             type="button"
+            className={`dock-btn ${deepFilterEnabled ? 'filter-active' : 'secondary'}`}
+            onClick={toggleDeepFilter}
+            disabled={!joined}
+            title={deepFilterEnabled ? 'Шумоподавление: включено (DeepFilterNet)' : 'Шумоподавление: выключено'}
+          >
+            <SparklesIcon size={20} />
+          </button>
+
+          <button
+            type="button"
             className={`dock-btn ${videoEnabled ? 'active' : 'danger-state'}`}
             onClick={toggleVideo}
             disabled={!joined}
@@ -995,6 +1021,8 @@ export default function RoomView({ session, onLeave }) {
           videoEnabled={videoEnabled}
           toggleAudio={toggleAudio}
           toggleVideo={toggleVideo}
+          deepFilterEnabled={deepFilterEnabled}
+          toggleDeepFilter={toggleDeepFilter}
         />
       )}
     </div>

@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Device } from 'mediasoup-client'
 import { SignalingClient } from '../signaling/SignalingClient.js'
+import {
+  createDeepFilterPipeline,
+  getSavedDeepFilterEnabled,
+  setSavedDeepFilterEnabled,
+} from '../audio/deepFilterNet.js'
 
 const ERROR_TEXT = {
   room_not_found: 'Встреча не найдена',
@@ -88,6 +93,44 @@ export function useRoom({ session }) {
   const audioEnabledRef = useRef(session.audioEnabled)
   const videoEnabledRef = useRef(session.videoEnabled)
 
+  // шумоподавление DeepFilterNet
+  const [deepFilterEnabled, setDeepFilterEnabledState] = useState(() => {
+    return session.deepFilterEnabled ?? getSavedDeepFilterEnabled()
+  })
+  const deepFilterEnabledRef = useRef(deepFilterEnabled)
+  const setDeepFilterEnabled = (v) => {
+    deepFilterEnabledRef.current = v
+    setDeepFilterEnabledState(v)
+  }
+  const pipelineRef = useRef(null)
+
+  const ensureAudioPipeline = useCallback(async (rawTrack) => {
+    if (!rawTrack) return null
+    if (
+      pipelineRef.current &&
+      pipelineRef.current.rawTrack === rawTrack &&
+      pipelineRef.current.track?.readyState === 'live'
+    ) {
+      return pipelineRef.current
+    }
+    if (pipelineRef.current) {
+      pipelineRef.current.cleanup()
+      pipelineRef.current = null
+    }
+    const pipeline = await createDeepFilterPipeline(rawTrack, {
+      enabled: deepFilterEnabledRef.current,
+    })
+    pipelineRef.current = pipeline
+    return pipeline
+  }, [])
+
+  const toggleDeepFilter = useCallback(() => {
+    const next = !deepFilterEnabledRef.current
+    setDeepFilterEnabled(next)
+    setSavedDeepFilterEnabled(next)
+    pipelineRef.current?.setEnabled?.(next)
+  }, [])
+
   const setAudioEnabled = (v) => { audioEnabledRef.current = v; setAudioEnabledState(v) }
   const setVideoEnabled = (v) => { videoEnabledRef.current = v; setVideoEnabledState(v) }
   const setScreenEnabledSync = (v) => { screenEnabledRef.current = v; setScreenEnabled(v) }
@@ -106,6 +149,7 @@ export function useRoom({ session }) {
     // выживших транспортов): если не помогает — пора в полную пересборку
     resumeAttempts: 0,
     extraLocalTracks: new Set(), // треки, полученные уже внутри комнаты
+    rawAudioTrack: session.stream?.getAudioTracks()[0] ?? null,
     // живые локальные треки для (пере)публикации: getUserMedia не зависит
     // от сети, треки переживают обрыв и годятся для нового транспорта
     activeTracks: {
@@ -125,6 +169,8 @@ export function useRoom({ session }) {
       if (key === 'webcam:audio') {
         audioEnabledRef.current = false
         setAudioEnabledState(false)
+        pipelineRef.current?.cleanup?.()
+        pipelineRef.current = null
       }
       if (key === 'webcam:video') {
         videoEnabledRef.current = false
@@ -135,6 +181,7 @@ export function useRoom({ session }) {
         stopScreenShare()
       }
     })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // --- контролы (вызываются из RoomView) ---
@@ -148,26 +195,40 @@ export function useRoom({ session }) {
         const stream = await navigator.mediaDevices.getUserMedia({
           audio: {
             echoCancellation: true,
-            noiseSuppression: true,
+            noiseSuppression: !deepFilterEnabledRef.current,
             autoGainControl: true,
             ...(session.devices?.micId ? { deviceId: { exact: session.devices.micId } } : {}),
           },
         })
-        const track = stream.getAudioTracks()[0]
-        if (!track) throw new Error('Микрофон не найден')
+        const rawTrack = stream.getAudioTracks()[0]
+        if (!rawTrack) throw new Error('Микрофон не найден')
+        refs.extraLocalTracks.add(rawTrack)
+        refs.rawAudioTrack = rawTrack
+
+        let trackToProduce = rawTrack
+        try {
+          const pipeline = await ensureAudioPipeline(rawTrack)
+          if (pipeline?.track) {
+            trackToProduce = pipeline.track
+          }
+        } catch (e) {
+          console.warn('[useRoom] ошибка создания DeepFilterNet пайплайна:', e)
+        }
+
         try {
           const p = await withTimeout(
-            refs.sendTransport.produce({ track, appData: { source: 'webcam' } }),
+            refs.sendTransport.produce({ track: trackToProduce, appData: { source: 'webcam' } }),
             PRODUCE_TIMEOUT_MS,
             'публикация аудио',
           )
           watchProducer(p, 'webcam:audio')
-          refs.extraLocalTracks.add(track)
-          refs.activeTracks.audio = track
-          setLocalAudioTrack(track)
+          refs.activeTracks.audio = trackToProduce
+          setLocalAudioTrack(trackToProduce)
           setAudioEnabled(true)
         } catch (e) {
-          track.stop()
+          rawTrack.stop()
+          pipelineRef.current?.cleanup?.()
+          pipelineRef.current = null
           throw e
         }
         return
@@ -176,10 +237,14 @@ export function useRoom({ session }) {
         producer.pause() // локально: трек гасится, кадры не кодируются
         await refs.signaling.request('pauseProducer', { producerId: producer.id }) // серверно + нотификация другим
         setAudioEnabled(false)
+        if (refs.rawAudioTrack) refs.rawAudioTrack.enabled = false
+        if (refs.activeTracks.audio) refs.activeTracks.audio.enabled = false
       } else {
         producer.resume()
         await refs.signaling.request('resumeProducer', { producerId: producer.id })
         setAudioEnabled(true)
+        if (refs.rawAudioTrack) refs.rawAudioTrack.enabled = true
+        if (refs.activeTracks.audio) refs.activeTracks.audio.enabled = true
       }
     } catch (e) {
       console.error('[toggleAudio]', e.message)
@@ -683,10 +748,23 @@ export function useRoom({ session }) {
 
       // 5) публикация локальных дорожек (живые треки переживают обрыв сети)
       const publishes = []
-      const audioTrack = refs.activeTracks.audio
+      let audioTrack = refs.activeTracks.audio
+      if (refs.rawAudioTrack && (!pipelineRef.current || pipelineRef.current.rawTrack !== refs.rawAudioTrack)) {
+        try {
+          const pipeline = await ensureAudioPipeline(refs.rawAudioTrack)
+          if (pipeline?.track) {
+            audioTrack = pipeline.track
+            refs.activeTracks.audio = pipeline.track
+            setLocalAudioTrack(pipeline.track)
+          }
+        } catch (err) {
+          console.warn('[useRoom] ошибка запуска DeepFilterNet:', err)
+        }
+      }
       const videoTrack = refs.activeTracks.video
       if (audioTrack) {
         audioTrack.enabled = audioEnabledRef.current
+        if (refs.rawAudioTrack) refs.rawAudioTrack.enabled = audioEnabledRef.current
         publishes.push(
           withTimeout(
             sendTransport.produce({ track: audioTrack, appData: { source: 'webcam' } }),
@@ -821,6 +899,8 @@ export function useRoom({ session }) {
       closeRecvTransport()
       for (const { consumer } of refs.consumers.values()) consumer.close()
       refs.consumers.clear()
+      pipelineRef.current?.cleanup?.()
+      pipelineRef.current = null
       for (const track of refs.extraLocalTracks) track.stop()
       refs.extraLocalTracks.clear()
       // остановить демонстрацию экрана, если ещё идёт
@@ -830,12 +910,13 @@ export function useRoom({ session }) {
       refs.device = null
       refs.sendTransport = null
     }
-  }, [session, watchProducer])
+  }, [session, watchProducer, ensureAudioPipeline])
 
   return {
     phase, error, remotePeers,
     audioEnabled, videoEnabled, localVideoTrack, localAudioTrack,
     screenEnabled, localScreenTrack, supportsScreenShare: isScreenShareSupported(),
+    deepFilterEnabled, toggleDeepFilter,
     toggleAudio, toggleVideo, toggleScreenShare,
   }
 }
