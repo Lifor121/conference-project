@@ -50,23 +50,24 @@
   /* Палитра PettyConf (холодный морской/небесный спектр):
      #1F333C, #659FD3, #85C3E7, #98B2BD, #CFDCE3, #EFF7FA */
 
-  /* Основной акцент — лазурный синий #659FD3 */
-  --accent: #4889c2;
-  --accent-hover: #3b7bb4;
-  --accent-active: #306ba0;
-  --accent-subtle: rgba(101, 159, 211, 0.14);
-  --accent-border: rgba(101, 159, 211, 0.35);
-  --accent-glow: rgba(101, 159, 211, 0.4);
+  /* Основной акцент — сбалансированный синий, одинаковый для светлой и тёмной темы */
+  --accent: #5292c7;
+  --accent-hover: #4180b5;
+  --accent-active: #356f9f;
+  --accent-subtle: rgba(82, 146, 199, 0.15);
+  --accent-border: rgba(82, 146, 199, 0.35);
+  --accent-glow: rgba(82, 146, 199, 0.35);
 
-  /* Семантические цвета */
-  --danger: #e06b53;
-  --danger-hover: #ce5840;
-  --danger-subtle: rgba(224, 107, 83, 0.14);
-  --danger-border: rgba(224, 107, 83, 0.32);
+  /* Семантические цвета: чистый рубиново-красный без желтизны и рыжины */
+  --danger: #e5484d;
+  --danger-hover: #d6393f;
+  --danger-active: #c22930;
+  --danger-subtle: rgba(229, 72, 77, 0.14);
+  --danger-border: rgba(229, 72, 77, 0.32);
 
-  --success: #659FD3;
-  --success-hover: #508ec4;
-  --success-subtle: rgba(101, 159, 211, 0.16);
+  --success: #5292c7;
+  --success-hover: #4180b5;
+  --success-subtle: rgba(82, 146, 199, 0.15);
 
   --warning: #DE9C53;
   --warning-hover: #ce8a3f;
@@ -86,17 +87,6 @@
    ========================================================================== */
 
 :root, [data-theme="dark"] {
-  --accent: #659FD3;
-  --accent-hover: #85C3E7;
-  --accent-active: #508ec4;
-  --accent-subtle: rgba(101, 159, 211, 0.18);
-  --accent-border: rgba(133, 195, 231, 0.35);
-  --accent-glow: rgba(101, 159, 211, 0.45);
-
-  --success: #85C3E7;
-  --success-hover: #a2d4f0;
-  --success-subtle: rgba(133, 195, 231, 0.16);
-
   --bg: #0e131b;
   --bg-subtle: #131a24;
   --surface: #19212e;
@@ -126,17 +116,6 @@
    ========================================================================== */
 
 [data-theme="light"] {
-  --accent: #4384be;
-  --accent-hover: #3573ab;
-  --accent-active: #2a6296;
-  --accent-subtle: rgba(67, 132, 190, 0.14);
-  --accent-border: rgba(67, 132, 190, 0.35);
-  --accent-glow: rgba(67, 132, 190, 0.35);
-
-  --success: #4384be;
-  --success-hover: #3573ab;
-  --success-subtle: rgba(67, 132, 190, 0.14);
-
   --bg: #EFF7FA;
   --bg-subtle: #e4edf1;
   --surface: #ffffff;
