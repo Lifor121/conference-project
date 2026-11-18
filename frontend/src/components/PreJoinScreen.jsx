@@ -139,7 +139,7 @@ export default function PreJoinScreen({ roomId, onJoin }) {
     <div className="prejoin-layout">
       <header className="prejoin-topbar">
         <div className="prejoin-brand">
-          <CatLogo size={32} interactive />
+          <CatLogo size={32} interactive={false} />
           <span>PettyConf</span>
         </div>
         <ThemeToggle />
