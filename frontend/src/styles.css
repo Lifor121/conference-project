@@ -1,3 +1,51 @@
+/* ==========================================================================
+   ШРИФТЫ (Departure Mono и Fira Sans)
+   ========================================================================== */
+
+@font-face {
+  font-family: 'Departure Mono';
+  src: url('/fonts/DepartureMono-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Fira Sans';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/fira-sans-cyrillic-400.woff2') format('woff2'),
+       url('/fonts/fira-sans-latin-400.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Fira Sans';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('/fonts/fira-sans-cyrillic-500.woff2') format('woff2'),
+       url('/fonts/fira-sans-latin-500.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Fira Sans';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('/fonts/fira-sans-cyrillic-600.woff2') format('woff2'),
+       url('/fonts/fira-sans-latin-600.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Fira Sans';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/fonts/fira-sans-cyrillic-700.woff2') format('woff2'),
+       url('/fonts/fira-sans-latin-700.woff2') format('woff2');
+}
+
 :root {
   /* Палитра PettyConf (холодный морской/небесный спектр):
      #1F333C, #659FD3, #85C3E7, #98B2BD, #CFDCE3, #EFF7FA */
@@ -24,7 +72,8 @@
   --warning-hover: #ce8a3f;
   --warning-subtle: rgba(222, 156, 83, 0.18);
 
-  --font-sans: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-sans: 'Fira Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'Departure Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   --radius-sm: 6px;
   --radius-md: 10px;
   --radius-lg: 14px;
@@ -139,6 +188,10 @@ html, body {
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+code, kbd, samp, pre {
+  font-family: var(--font-mono);
 }
 
 #root {
@@ -280,9 +333,10 @@ label {
 }
 
 .home-hero h1 {
-  font-size: 56px;
-  font-weight: 700;
-  letter-spacing: -0.03em;
+  font-family: var(--font-mono);
+  font-size: 52px;
+  font-weight: 400;
+  letter-spacing: -0.02em;
   margin: 0;
   color: var(--text);
 }
@@ -336,6 +390,8 @@ label {
 
 .join-row input {
   flex: 1;
+  font-family: var(--font-mono);
+  font-size: 13px;
 }
 
 .btn-join {
@@ -392,9 +448,10 @@ label {
   display: flex;
   align-items: center;
   gap: 10px;
-  font-size: 20px;
-  font-weight: 700;
-  letter-spacing: -0.02em;
+  font-family: var(--font-mono);
+  font-size: 18px;
+  font-weight: 400;
+  letter-spacing: -0.01em;
 }
 
 .prejoin-card-container {
@@ -555,7 +612,8 @@ label {
   background: var(--surface-raised);
   border: 1px solid var(--border);
   color: var(--text-muted);
-  font-size: 12px;
+  font-family: var(--font-mono);
+  font-size: 11px;
 }
 
 .room-id-pill:hover {
@@ -1030,8 +1088,9 @@ label {
   right: -3px;
   background: var(--danger);
   color: #ffffff;
+  font-family: var(--font-mono);
   font-size: 9px;
-  font-weight: 700;
+  font-weight: 400;
   letter-spacing: 0.04em;
   padding: 1px 5px;
   border-radius: 4px;
@@ -1493,8 +1552,9 @@ label {
 }
 
 .menu-volume-value {
-  font-size: 12px;
-  font-weight: 600;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
   color: var(--text);
   font-variant-numeric: tabular-nums;
 }
